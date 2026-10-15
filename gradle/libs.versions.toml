@@ -1,0 +1,24 @@
+[versions]
+gradle-ktfmt = "0.27.0"
+gradle-shadow = "9.6.1"
+gradle-versions = "0.54.0"
+kotest = "6.2.5"
+kotlin = "2.4.20"
+kotlin-logging = "8.0.4"
+logback-classic = "1.6.3"
+logstash-logback-encoder = "9.0"
+slf4j = "2.0.17"
+
+[libraries]
+kotest-runner = { module = "io.kotest:kotest-runner-junit6", version.ref = "kotest" }
+kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlin-logging" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback-classic" }
+logstash-logback-encoder = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstash-logback-encoder" }
+slf4j = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+
+[plugins]
+kotest = { id = "io.kotest", version.ref = "kotest" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+gradle-ktfmt = { id = "com.ncorti.ktfmt.gradle", version.ref = "gradle-ktfmt" }
+gradle-shadow = { id = "com.gradleup.shadow", version.ref = "gradle-shadow" }
+gradle-versions = { id = "com.github.ben-manes.versions", version.ref = "gradle-versions" }
