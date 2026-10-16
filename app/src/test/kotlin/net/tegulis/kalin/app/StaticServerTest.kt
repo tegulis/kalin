@@ -68,6 +68,8 @@ class StaticServerTest :
             shouldThrow<UsageException> { ServerOptions.parse(arrayOf("--port")) }
             shouldThrow<UsageException> { ServerOptions(directory = Path.of("/does/not/exist")).validate() }
             ServerOptions.parse(arrayOf("--help")).showHelp shouldBe true
+            ServerOptions.parse(emptyArray()).host shouldBe "127.0.0.1"
+            ServerOptions.parse(arrayOf("-b", "0.0.0.0")).host shouldBe "0.0.0.0"
         }
 
         test("serves files, index pages, listings and hides dotfiles") {

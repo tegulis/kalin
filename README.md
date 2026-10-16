@@ -387,11 +387,14 @@ The `app` module builds `kalin-server`, which serves a directory like a minimal 
 java --enable-native-access=ALL-UNNAMED -jar app/build/libs/app-0.1.0-all.jar -p 8080 /var/www
 ```
 
+It listens on `127.0.0.1` only by default. Pass `-b 0.0.0.0` (or a specific address) to serve other machines; this
+is also needed in a container, where the published port reaches the container's own network interface.
+
 ```
 Usage: kalin-server [options] [directory]
 
   -p, --port <port>           Port to listen on (default 8080, 0 = random)
-  -b, --bind <host>           Address to bind (default: all interfaces)
+  -b, --bind <host>           Address to bind (default 127.0.0.1; -b 0.0.0.0 for all interfaces)
       --context-path <path>   Serve below a path prefix, for example /files
       --index <files>         Comma separated index files (default index.html,index.htm)
       --no-listing            Do not list directories without an index file

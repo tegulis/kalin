@@ -19,7 +19,7 @@ enum class LogFormat {
 /** Everything `kalin-server` can be configured with. */
 data class ServerOptions(
     val directory: Path = Path.of("."),
-    val host: String? = null,
+    val host: String? = "127.0.0.1",
     val port: Int = 8080,
     val contextPath: String = "/",
     val engine: Engine = Engine.LOOM,
@@ -53,7 +53,8 @@ data class ServerOptions(
             |
             |Options:
             |  -p, --port <port>           Port to listen on (default 8080, 0 = random)
-            |  -b, --bind <host>           Address to bind (default: all interfaces)
+            |  -b, --bind <host>           Address to bind (default 127.0.0.1, local only; use
+            |                              -b 0.0.0.0 to serve other machines, also in containers)
             |  -d, --dir <directory>       Directory to serve (same as the positional argument)
             |      --context-path <path>   Serve below a path prefix, for example /files
             |      --index <files>         Comma separated index files (default index.html,index.htm)
