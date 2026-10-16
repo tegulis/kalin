@@ -1,5 +1,6 @@
 package net.tegulis.kalin.engine.loop
 
+import java.io.EOFException
 import java.io.IOException
 import java.nio.file.Path
 import java.util.ArrayDeque
@@ -134,7 +135,12 @@ internal class OutputQueue(private val chunkSize: Int) {
                             if (seg.file == null) seg.file = socket.openFile(seg.path)
                             while (seg.remaining > 0) {
                                 val n = socket.sendFile(seg.file!!, seg.position, seg.remaining)
-                                if (n <= 0) return false
+                                if (n <= 0) {
+                                    // 0 also means end of file: a file that shrank would stall until the write timeout
+                                    if (seg.position >= socket.fileSize(seg.file!!))
+                                        throw EOFException("File shorter than expected")
+                                    return false
+                                }
                                 progressed = true
                                 seg.position += n
                                 seg.remaining -= n

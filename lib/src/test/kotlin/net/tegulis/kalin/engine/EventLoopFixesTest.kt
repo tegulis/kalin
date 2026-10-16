@@ -3,7 +3,14 @@ package net.tegulis.kalin.engine
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
+import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.Socket
+import java.net.SocketTimeoutException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+import net.tegulis.kalin.config.ServerConfig
 import net.tegulis.kalin.testtools.TestMode
 import net.tegulis.kalin.testtools.testKalin
 
@@ -35,6 +42,91 @@ class EventLoopFixesTest :
                         }
                     }
                 }
+
+                test("a file that shrank after its length was taken fails fast") {
+                    val file = sparseFile(100_000)
+                    withEngine(
+                        transport,
+                        { ex ->
+                            try {
+                                ex.sendFile(file, 0, 300_000)
+                            } catch (_: IOException) {
+                                ex.abort()
+                            }
+                        },
+                    ) {
+                        Socket("127.0.0.1", port).use { s ->
+                            s.soTimeout = 5000
+                            s.getOutputStream().write("GET / HTTP/1.1\r\nHost: x\r\n\r\n".toByteArray())
+                            // The connection closes at the end of the file instead of stalling until the write timeout
+                            val received = s.getInputStream().readAllBytes()
+                            String(received, 0, 12, Charsets.ISO_8859_1) shouldBe "HTTP/1.1 200"
+                            (received.size < 300_000) shouldBe true
+                        }
+                    }
+                    Files.delete(file)
+                }
             }
         }
     })
+
+/** A bare event loop engine (one loop) under test. */
+private class EngineUnderTest(val port: Int, private val engine: EventLoopEngine) {
+    private val stopped = AtomicBoolean(false)
+
+    fun stop() {
+        if (stopped.compareAndSet(false, true)) engine.stop()
+    }
+}
+
+/** Runs [block] against a bare event loop engine whose exchanges go to [handle]. */
+private fun withEngine(
+    transport: Transport,
+    handle: (Http1Exchange) -> Unit,
+    nonBlocking: Boolean = false,
+    configure: ServerConfig.() -> Unit = {},
+    block: EngineUnderTest.() -> Unit,
+) {
+    val config =
+        ServerConfig().apply {
+            port = 0
+            host = "127.0.0.1"
+            eventLoops = 1
+            configure()
+        }
+    val handler =
+        object : ExchangeHandler {
+            override fun handle(exchange: Http1Exchange) = handle(exchange)
+
+            override fun isNonBlocking(method: String, path: String): Boolean = nonBlocking
+        }
+    val engine = EventLoopEngine(ServerRuntime(config, handler), epoll = transport == Transport.EPOLL)
+    val underTest = EngineUnderTest(engine.start().port, engine)
+    try {
+        underTest.block()
+    } finally {
+        underTest.stop()
+    }
+}
+
+private fun sparseFile(size: Long): Path {
+    val file = Files.createTempFile("kalin-file", ".bin")
+    RandomAccessFile(file.toFile(), "rw").use { it.setLength(size) }
+    return file
+}
+
+/** Sends [bytes] every 150 ms for up to [millis]; returns true once the server closed the connection. */
+private fun dripUntilClosed(socket: Socket, bytes: ByteArray, millis: Long): Boolean {
+    val end = System.nanoTime() + millis * 1_000_000
+    socket.soTimeout = 150
+    val buf = ByteArray(1024)
+    while (System.nanoTime() < end) {
+        try {
+            socket.getOutputStream().write(bytes)
+            if (socket.getInputStream().read(buf) < 0) return true
+        } catch (_: SocketTimeoutException) {} catch (_: IOException) {
+            return true
+        }
+    }
+    return false
+}

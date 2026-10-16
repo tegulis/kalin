@@ -22,6 +22,9 @@ internal interface LoopSocket {
     /** Sends up to [count] bytes of an opened file from [position]; returns bytes sent (0 if it would block). */
     fun sendFile(file: AutoCloseable, position: Long, count: Long): Long
 
+    /** The current size of an opened file. */
+    fun fileSize(file: AutoCloseable): Long
+
     /** Enables or disables read readiness notifications (level-triggered transports only). */
     fun setReadInterest(on: Boolean)
 

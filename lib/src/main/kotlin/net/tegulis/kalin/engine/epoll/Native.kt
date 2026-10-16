@@ -86,6 +86,7 @@ internal object Native {
     const val O_RDONLY = 0
     const val O_CLOEXEC = 0x80000
     const val SHUT_WR = 1
+    const val SEEK_END = 2
 
     private val linker: Linker = Linker.nativeLinker()
     private val libc = linker.defaultLookup()
@@ -127,6 +128,7 @@ internal object Native {
             Linker.Option.captureCallState("errno"),
             Linker.Option.firstVariadicArg(2),
         )
+    private val lseek = handle("lseek", FunctionDescriptor.of(JAVA_LONG, JAVA_INT, JAVA_LONG, JAVA_INT))
     private val shutdown = handle("shutdown", FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT))
     private val close = handle("close", FunctionDescriptor.of(JAVA_INT, JAVA_INT))
 
@@ -309,6 +311,13 @@ internal object Native {
     fun openRead(s: Scratch, arena: Arena, path: String): Int {
         val p = arena.allocateFrom(path)
         return check(s, "open", open.invokeExact(s.state, p, O_RDONLY or O_CLOEXEC) as Int)
+    }
+
+    /** The size of an open file (`lseek` to the end; `sendfile` with an explicit offset ignores the file position). */
+    fun fileSize(s: Scratch, fd: Int): Long {
+        val n = lseek.invokeExact(s.state, fd, 0L, SEEK_END) as Long
+        if (n < 0) throw NativeException("lseek", s.errno())
+        return n
     }
 
     fun shutdownOutput(s: Scratch, fd: Int) {

@@ -300,6 +300,9 @@ internal class EpollSocket(
         return n
     }
 
+    override fun fileSize(file: AutoCloseable): Long =
+        Native.fileSize(ws, handles[file] ?: throw java.io.IOException("Unknown file handle"))
+
     override fun setReadInterest(on: Boolean) {}
 
     /** EPOLLOUT is only registered while a write is incomplete (like Netty), avoiding readiness noise. */

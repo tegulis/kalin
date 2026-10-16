@@ -72,6 +72,8 @@ internal class NioLoopSocket(private val channel: SocketChannel) : LoopSocket {
     override fun sendFile(file: AutoCloseable, position: Long, count: Long): Long =
         (file as FileChannel).transferTo(position, count, channel)
 
+    override fun fileSize(file: AutoCloseable): Long = (file as FileChannel).size()
+
     private fun setOp(op: Int, on: Boolean) {
         if (!key.isValid) return
         val ops = key.interestOps()
