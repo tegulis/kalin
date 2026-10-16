@@ -513,4 +513,15 @@ class SecurityTest :
                 client.post("/r") { header("X-HTTP-Method-Override", "delete") }.bodyAsText() shouldBe "delete"
             }
         }
+
+        test("method override can be disabled") {
+            testKalin {
+                app {
+                    http.methodOverride = false
+                    routes.post("/r") { it.result("post:${it.method()}") }
+                    routes.delete("/r") { it.result("delete") }
+                }
+                client.post("/r") { header("X-HTTP-Method-Override", "DELETE") }.bodyAsText() shouldBe "post:POST"
+            }
+        }
     })

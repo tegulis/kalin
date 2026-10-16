@@ -291,6 +291,7 @@ Kalin.create { config ->
     config.server.maxConnections = 10_000
     config.http.maxRequestSize = 1_000_000    // body bytes read into memory by ctx.body()
     config.http.defaultContentType = "text/plain"
+    config.http.methodOverride = false        // ignore X-HTTP-Method-Override (honored on POST only by default)
     config.router.contextPath = "/api"
     config.contextResolver.useForwardedHeaders()   // trust X-Forwarded-* / Forwarded from your proxy
     config.requestLogger.http { ctx, ms -> log.info("${ctx.method()} ${ctx.path()} ${ctx.statusCode()} $ms ms") }

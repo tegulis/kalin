@@ -120,7 +120,10 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
             return it
         }
         // Only POST may be overridden: a plain GET must never turn into a state-changing method
-        val override = if (exchange.method == "POST") exchange.requestHeaders[Header.X_HTTP_METHOD_OVERRIDE] else null
+        val override =
+            if (exchange.method == "POST" && state.config.http.methodOverride) {
+                exchange.requestHeaders[Header.X_HTTP_METHOD_OVERRIDE]
+            } else null
         val m = HandlerType.findOrDefault(override?.trim()?.uppercase() ?: exchange.method)
         cachedMethod = m
         return m

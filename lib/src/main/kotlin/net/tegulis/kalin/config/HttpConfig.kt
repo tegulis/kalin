@@ -26,6 +26,13 @@ public class HttpConfig {
     /** Require `Content-Type: application/json` for `bodyAsClass` and form content types for `formParam`. */
     @JvmField public var strictContentTypes: Boolean = false
 
+    /**
+     * Honor the `X-HTTP-Method-Override` header on `POST` requests, so clients that can only send `GET` and `POST` can
+     * reach `PUT`, `PATCH` and `DELETE` routes. Requests with any other method are never overridden. Set to false to
+     * ignore the header entirely.
+     */
+    @JvmField public var methodOverride: Boolean = true
+
     /** Response compression. Gzip and Deflate are supported. */
     @JvmField public var compressionStrategy: CompressionStrategy = CompressionStrategy.GZIP
 

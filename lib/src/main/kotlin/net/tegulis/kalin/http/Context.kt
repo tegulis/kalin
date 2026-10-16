@@ -77,7 +77,7 @@ public abstract class Context {
     /** The request `Content-Type`. */
     public fun contentType(): String? = header(Header.CONTENT_TYPE)
 
-    /** The request method (honors `X-HTTP-Method-Override`). */
+    /** The request method (honors `X-HTTP-Method-Override` on POST unless `config.http.methodOverride` is off). */
     public abstract fun method(): HandlerType
 
     /** The raw request path, including the context path. */

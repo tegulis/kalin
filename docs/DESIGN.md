@@ -455,7 +455,7 @@ testKalin {
 | Validation | `*AsClass<T>()`, `check`, `allowNullable`, `getOrDefault`, `errors()`, `collectErrors()`, `config.validation.register` |
 | SSE | `config.routes.sse`, `SseClient` (see §4.5) |
 | Concurrency | `ctx.async { }` (virtual thread) |
-| Config | `config.http` (`maxRequestSize`, `defaultContentType`, `prefer405over404`, `generateEtags`, `strictContentTypes`, `responseBufferSize`, `compressionStrategy` = Gzip/Deflate/NONE) |
+| Config | `config.http` (`maxRequestSize`, `defaultContentType`, `prefer405over404`, `generateEtags`, `strictContentTypes`, `methodOverride`, `responseBufferSize`, `compressionStrategy` = Gzip/Deflate/NONE) |
 | Config | `config.server` (replaces `config.jetty`): `host`, `port`, `backlog`, `engine`, `transport`, `eventLoops`, `handlerExecution`, `maxConnections`, `idleTimeout`, `requestTimeout`, header limits |
 | Config | `config.router`, `config.contextResolver` (+ `X-Forwarded-*` / `Forwarded` support for proxies), `config.requestLogger.http`, `config.events.*`, `config.appData`, `config.jsonMapper`, `config.fileRenderer`, `config.registerPlugin`, `config.startup.showBanner` |
 | Static | `config.staticFiles.add(...)`, `hostedPath`, `headers`, `mimeTypes`, `skipFileFunction`, `roles`, `config.spaRoot.addFile/addHandler` |

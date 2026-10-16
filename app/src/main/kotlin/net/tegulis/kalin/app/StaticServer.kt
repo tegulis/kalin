@@ -26,6 +26,7 @@ fun KalinConfig.staticServer(options: ServerOptions) {
     server.idleTimeout = options.idleTimeout
     server.serverHeader = options.serverHeader
     router.contextPath = options.contextPath
+    http.methodOverride = false
     http.compressionStrategy = if (options.compression) CompressionStrategy.GZIP else CompressionStrategy.NONE
     startup.showBanner = false
     if (options.proxyHeaders) contextResolver.useForwardedHeaders()

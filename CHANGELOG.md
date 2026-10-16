@@ -18,6 +18,7 @@ First release.
 - `NonBlockingHandler` / `nonBlocking { }`, `ctx.future { }`, `ctx.async { }`, `suspendHandler { }`,
   `CompletableFuture.await()`.
 - Context-parameter helpers in `net.tegulis.kalin.ktx`.
+- `config.http.methodOverride`: `X-HTTP-Method-Override` is honored on `POST` only, and can be turned off.
 - `kalin-json` (kotlinx.serialization), `kalin-rendering-jte` (jte), `kalin-testtools` (`testKalin { }`,
   `KalinTest`), `kalin-inject` (kotlin-inject), `kalin-bundle`.
 - `kalin-server`: standalone static file server (`app` module).
