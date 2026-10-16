@@ -99,7 +99,7 @@ internal class Http1Exchange(
 
     /** True if the request asked for `100 Continue` but the body was never requested. */
     internal val continueSkipped: Boolean
-        get() = head.expectContinue && !continueSent
+        get() = head.expectContinue && head.hasBody && !continueSent
 
     override fun closeConnectionAfterResponse() {
         closeAfter = true
