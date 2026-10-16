@@ -1,13 +1,8 @@
 package net.tegulis.kalin.rendering.jte
 
-import gg.jte.ContentType
-import gg.jte.TemplateEngine
-import gg.jte.resolve.DirectoryCodeResolver
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.engine.spec.tempdir
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import java.net.URLClassLoader
 import java.nio.file.Path
 import net.tegulis.kalin.testtools.testKalin
 
@@ -41,31 +36,27 @@ class KalinJteTest :
             }
         }
 
-        test("renders precompiled templates") {
-            val classes = tempdir().toPath()
-            val sources = tempdir().toPath()
-            java.nio.file.Files.copy(templates.resolve("hello.jte"), sources.resolve("hello.jte"))
-            val compiler = TemplateEngine.create(DirectoryCodeResolver(sources), classes, ContentType.Html)
-            compiler.setBinaryStaticContent(true)
-            compiler.setClassPath(KalinJte.compileClassPath())
-            compiler.precompileAll(listOf("hello.jte"))
-            val loader = URLClassLoader(arrayOf(classes.toUri().toURL()), javaClass.classLoader)
-            val precompiled = TemplateEngine.createPrecompiled(classes, ContentType.Html, loader)
+        test("the default engine loads precompiled templates; missing templates are server errors") {
             testKalin {
                 app {
-                    fileRenderer(KalinJte(precompiled))
+                    fileRenderer(KalinJte())
+                    routes.get("/") { ctx -> ctx.render("missing.jte") }
+                }
+                client.get("/").code shouldBe 500
+            }
+        }
+
+        test("renders to a string for non-streaming use") {
+            val renderer = KalinJte(KalinJte.directoryTemplateEngine(templates.toString()))
+            testKalin {
+                app {
                     routes.get("/") { ctx ->
-                        ctx.render("hello.jte", mapOf("name" to "precompiled", "items" to listOf("x")))
-                    }
-                    routes.get("/string") { ctx ->
-                        ctx.html(
-                            KalinJte(precompiled)
-                                .render("hello.jte", mapOf("name" to "s", "items" to emptyList<String>()), ctx)
+                        ctx.result(
+                            renderer.render("hello.jte", mapOf("name" to "s", "items" to emptyList<String>()), ctx)
                         )
                     }
                 }
-                client.get("/").bodyAsText() shouldContain "<h1>Hello precompiled!</h1>"
-                client.get("/string").bodyAsText() shouldContain "<h1>Hello s!</h1>"
+                client.get("/").bodyAsText() shouldContain "<h1>Hello s!</h1>"
             }
         }
     })
