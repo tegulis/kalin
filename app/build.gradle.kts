@@ -17,10 +17,12 @@ application {
 
 tasks["shadowJar"].group = "distribution"
 
-tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
-    manifest { attributes("Enable-Native-Access" to "ALL-UNNAMED", "Implementation-Version" to project.version) }
-    mergeServiceFiles()
-}
+val shadowJar =
+    tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+        archiveBaseName = "kalin-server"
+        manifest { attributes("Enable-Native-Access" to "ALL-UNNAMED", "Implementation-Version" to project.version) }
+        mergeServiceFiles()
+    }
 
 listOf("startScripts", "distZip", "distTar", "shadowDistZip", "shadowDistTar").forEach { taskName ->
     tasks.named(taskName) {
@@ -29,15 +31,13 @@ listOf("startScripts", "distZip", "distTar", "shadowDistZip", "shadowDistTar").f
     }
 }
 
-// Pack the shadowJar and asset files into a zip
+// Pack the shadowJar with the license files into a zip
 tasks.register("packZip", Zip::class) {
     group = "distribution"
-    dependsOn("shadowJar")
     archiveFileName = "kalin-server-${project.version}.zip"
     destinationDirectory = file("build/distributions")
-    from("build/libs") { include("${project.name}-${project.version}-all.jar") }
-    from("dist") { include("**/*") }
-    from(rootProject.file("LICENSE"))
+    from(shadowJar)
+    from(rootProject.files("LICENSE", "NOTICE"))
 }
 
 dependencies {

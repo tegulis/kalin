@@ -384,7 +384,7 @@ The `app` module builds `kalin-server`, which serves a directory like a minimal 
 
 ```sh
 ./gradlew :app:shadowJar
-java --enable-native-access=ALL-UNNAMED -jar app/build/libs/app-0.1.0-all.jar -p 8080 /var/www
+java --enable-native-access=ALL-UNNAMED -jar app/build/libs/kalin-server-0.1.0-all.jar -p 8080 /var/www
 ```
 
 It listens on `127.0.0.1` only by default. Pass `-b 0.0.0.0` (or a specific address) to serve other machines; this
@@ -418,7 +418,7 @@ Basic authentication credentials come from exactly one of `--basic-auth user:pw`
 file holds `user:pw`; a trailing newline is ignored) or the environment variable `KALIN_BASIC_AUTH=user:pw`. A
 command line value is visible to other local users through `ps` and `/proc`, so prefer the file or the environment.
 
-`./gradlew :app:packZip` builds a distributable zip.
+`./gradlew :app:packZip` builds a distributable zip with the jar, LICENSE and NOTICE.
 
 ## Deployment
 

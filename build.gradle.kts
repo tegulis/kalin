@@ -133,8 +133,11 @@ subprojects {
                 dependsOn("dokkaGeneratePublicationHtml")
                 from(layout.buildDirectory.dir("dokka/html"))
             }
+        // Apache License 2.0, section 4: ship the license and the NOTICE file with every artifact
+        val licenseFiles = rootProject.files("LICENSE", "NOTICE")
         tasks.withType<Jar>().configureEach {
             archiveBaseName.set(artifact)
+            from(licenseFiles) { into("META-INF") }
             manifest {
                 attributes(
                     "Implementation-Title" to artifact,
@@ -148,7 +151,14 @@ subprojects {
                 create<MavenPublication>("maven") {
                     artifactId = artifact
                     from(components["java"])
-                    afterEvaluate { artifact(tasks.named("kotlinSourcesJar")) { classifier = "sources" } }
+                    afterEvaluate {
+                        // The Kotlin plugin's sources jar is an org.gradle.jvm.tasks.Jar, which withType<Jar> misses
+                        val sourcesJar =
+                            tasks.named<org.gradle.jvm.tasks.Jar>("kotlinSourcesJar") {
+                                from(licenseFiles) { into("META-INF") }
+                            }
+                        artifact(sourcesJar) { classifier = "sources" }
+                    }
                     artifact(dokkaJar)
                     pom {
                         name.set(artifact)
