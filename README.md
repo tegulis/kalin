@@ -52,7 +52,7 @@ fun main() {
 - [Context parameters](#context-parameters)
 - [kalin-server: static file server](#kalin-server-static-file-server)
 - [Deployment](#deployment)
-- [Differences from Javalin](#differences-from-javalin)
+- [Differences from Javalin and Ktor](#differences-from-javalin-and-ktor)
 - [Building](#building)
 
 ## Installation
@@ -289,11 +289,11 @@ Kalin.create { config ->
     config.server.idleTimeout = 30.seconds
     config.server.requestTimeout = 30.seconds // the whole request head must arrive within this time
     config.server.maxConnections = 10_000
-    config.http.maxRequestSize = 1_000_000    // body bytes read into memory by ctx.body()
+    config.http.maxRequestSize = 1_000_000    // request body limit (also multipart uploads, by default)
     config.http.defaultContentType = "text/plain"
     config.http.methodOverride = false        // ignore X-HTTP-Method-Override (honored on POST only by default)
     config.router.contextPath = "/api"
-    config.contextResolver.useForwardedHeaders()   // trust X-Forwarded-* / Forwarded from your proxy
+    config.contextResolver.useForwardedHeaders()   // trust X-Forwarded-* / Forwarded (rightmost client IP)
     config.requestLogger.http { ctx, ms -> log.info("${ctx.method()} ${ctx.path()} ${ctx.statusCode()} $ms ms") }
     config.events.serverStarted { log.info("up") }
     config.appData(myKey, myValue)
@@ -431,17 +431,17 @@ Run with `java --enable-native-access=ALL-UNNAMED -jar app.jar` to allow the epo
 enable HTTP/2 at the proxy for SSE-heavy apps. `app.stop()` stops accepting connections, closes idle ones, waits up
 to `config.server.shutdownTimeout` for in-flight requests and then closes the rest; call it from a shutdown hook.
 
-## Differences from Javalin
+## Differences from Javalin and Ktor
 
 - Packages `io.javalin.*` → `net.tegulis.kalin.*`. Default JSON is kotlinx.serialization (`@Serializable`).
 - No WebSocket API, no servlet objects (`ctx.req()`, `ctx.res()`), no sessions, no SSL redirect plugin, no Brotli or
   Zstd. `ctx.exchange()` gives the raw engine exchange instead.
 - `config.jetty.*` → `config.server.*`; handlers always run on virtual threads.
-- `HEAD` requests run the matching `GET` handler and send its headers without the body (Javalin answers `200`
-  without running it).
-- Suspend handlers are written as `suspendHandler { ctx -> }`.
-- Test tools: `testKalin { }` / `KalinTest.test(app) { server, client -> }`; JSON request bodies are set with
-  `client.post(path) { json(value) }`.
+- Safer defaults than Javalin: default error responses are `text/plain` for browsers, `useForwardedHeaders()` takes
+  the rightmost (proxy-added) client IP, and multipart uploads are limited by `config.http.maxRequestSize`.
+
+[docs/differences-javalin.md](docs/differences-javalin.md) lists every difference from Javalin;
+[docs/differences-ktor.md](docs/differences-ktor.md) maps Ktor concepts to Kalin.
 
 The design document with background and decisions is in [docs/DESIGN.md](docs/DESIGN.md).
 

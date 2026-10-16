@@ -471,6 +471,8 @@ Multipart (`uploadedFile(s)`, `uploadedFileMap`, `isMultipart*`), `writeSeekable
 
 ### 6.4 Differences from Javalin
 
+The complete, current list is in [differences-javalin.md](differences-javalin.md) (and [differences-ktor.md](differences-ktor.md) for Ktor users). Summary:
+
 - No WebSocket API (`ws*`, `wsException`, `requestLogger.ws`) — by design, never added.
 - `config.jetty.*` → `config.server.*`. No servlet objects, no `ctx.req()` / `ctx.res()`; `ctx.exchange()` gives the raw engine exchange.
 - `useVirtualThreads` is always effectively on for handlers.

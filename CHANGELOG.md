@@ -23,3 +23,19 @@ First release.
   `KalinTest`), `kalin-inject` (kotlin-inject), `kalin-bundle`.
 - `kalin-server`: standalone static file server (`app` module).
 - Examples, TechEmpower-style benchmarks and baseline comparison scripts.
+- `config.http.htmlErrorMessages` (opt-in HTML default error responses), `MultipartConfig.maxParts`,
+  `useForwardedHeaders(mode, trustedProxies)` with `ForwardedIp.RIGHTMOST` / `LEFTMOST`, `ctx.forwardedFor()`,
+  `KalinJte.directoryTemplateEngine(classDirectory = ...)`.
+- `kalin-server`: `--basic-auth-file <path>` and the `KALIN_BASIC_AUTH` environment variable.
+
+### Defaults
+
+- Default error responses are `text/plain` for HTML clients (no unescaped HTML).
+- `useForwardedHeaders()` takes the rightmost (proxy-added) forwarded client IP.
+- Multipart uploads are limited by `config.http.maxRequestSize` (1 MB) unless `maxTotalRequestSize` is set, and to
+  1000 parts.
+- `kalin-server` binds to `127.0.0.1`; pass `-b 0.0.0.0` to listen on all interfaces.
+- Strict HTTP/1.1 framing: chunked bodies need CRLF, HTTP/1.1 requests need exactly one `Host`, `*` only for
+  `OPTIONS`. `config.server.writeTimeout` limits stalls, not total transfer time.
+
+See [docs/differences-javalin.md](docs/differences-javalin.md) and [docs/differences-ktor.md](docs/differences-ktor.md).
