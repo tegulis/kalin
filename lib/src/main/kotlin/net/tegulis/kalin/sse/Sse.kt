@@ -119,7 +119,9 @@ internal constructor(private val ctx: Context, private val emitter: Emitter, pri
 
     /** Adds a callback that runs once when the stream closes (by [close] or client disconnect). */
     public fun onClose(closeCallback: Runnable) {
-        if (terminated.get()) closeCallback.run() else closeCallbacks.add(closeCallback)
+        closeCallbacks.add(closeCallback)
+        // Raced with close(): whoever removes the callback runs it, so it runs exactly once
+        if (terminated.get() && closeCallbacks.remove(closeCallback)) runCallback(closeCallback)
     }
 
     /** Closes the stream. */
@@ -129,14 +131,16 @@ internal constructor(private val ctx: Context, private val emitter: Emitter, pri
         try {
             stream.close()
         } catch (_: IOException) {}
-        for (cb in closeCallbacks) {
-            try {
-                cb.run()
-            } catch (e: Exception) {
-                log.log(Level.WARNING, "SSE onClose callback failed", e)
-            }
-        }
+        for (cb in closeCallbacks) if (closeCallbacks.remove(cb)) runCallback(cb)
         closedFuture.complete(Unit)
+    }
+
+    private fun runCallback(cb: Runnable) {
+        try {
+            cb.run()
+        } catch (e: Exception) {
+            log.log(Level.WARNING, "SSE onClose callback failed", e)
+        }
     }
 
     /** Sends [data] as an event named `message`. */

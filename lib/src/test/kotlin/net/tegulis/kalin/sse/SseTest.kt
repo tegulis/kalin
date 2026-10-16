@@ -87,6 +87,33 @@ class SseTest :
             }
         }
 
+        test("onClose callbacks racing with close run exactly once") {
+            val clients = java.util.concurrent.LinkedBlockingQueue<SseClient>()
+            testKalin {
+                app {
+                    routes.sse("/sse") { client ->
+                        client.keepAlive()
+                        clients.add(client)
+                    }
+                }
+                repeat(20) {
+                    client.sse("/sse") {
+                        val sse = clients.poll(5, TimeUnit.SECONDS)!!
+                        val runs = java.util.concurrent.atomic.AtomicInteger()
+                        val closer =
+                            Thread.ofPlatform().start {
+                                Thread.onSpinWait()
+                                sse.close()
+                            }
+                        repeat(2000) { sse.onClose { runs.incrementAndGet() } }
+                        closer.join()
+                        runs.get() shouldBe 2000
+                        awaitEnd() shouldBe true
+                    }
+                }
+            }
+        }
+
         test("client disconnect fires onClose quickly") {
             val closed = CountDownLatch(1)
             val started = CountDownLatch(1)
