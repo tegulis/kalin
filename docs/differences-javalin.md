@@ -82,8 +82,8 @@ lists everything that behaves differently. For Ktor, see [differences-ktor.md](d
   `"…-gzip"`, `"…-deflate"`). `If-None-Match` matches any of them; `If-Range` matches the identity tag, since partial
   responses are never compressed. `304` responses carry `Vary: Accept-Encoding`.
 - **Ranges** follow RFC 9110. A syntactically invalid range such as `bytes=5-3` is ignored (`200` with the whole
-  file). Only unsatisfiable ranges answer `416`. When several ranges are requested and more than one can be satisfied, the whole file is sent with
-  `200` (no `multipart/byteranges`).
+  file). Only unsatisfiable ranges answer `416`. When several ranges are requested and more than one can be
+  satisfied, the whole file is sent with `200` (no `multipart/byteranges`).
 
 ### Bundled plugins
 

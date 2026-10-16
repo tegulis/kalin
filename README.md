@@ -1,7 +1,7 @@
 # Kalin
 
 A tiny, 100% Kotlin web framework with a [Javalin](https://javalin.io)-compatible API and its own HTTP/1.1 server.
-No Jetty, no Netty, no Servlet API — just the Kotlin standard library and the JDK.
+It needs only the Kotlin standard library and the JDK: no Jetty, Netty or Servlet API.
 
 ```kotlin
 import net.tegulis.kalin.Kalin
@@ -14,19 +14,19 @@ fun main() {
 }
 ```
 
-- **Javalin 7 API**: `config.routes`, handlers, filters, `Context`, validation, exception/error mappers, SSE, static
+- Javalin 7 API: `config.routes`, handlers, filters, `Context`, validation, exception/error mappers, SSE, static
   files, plugins. Migrating usually means changing `io.javalin` imports to `net.tegulis.kalin`.
-- **Own HTTP/1.1 server** with two engines: `LOOM` (a virtual thread per connection) and `EVENT_LOOP` (N event loops,
-  JDK NIO or native Linux **epoll through the FFM API**). Keep-alive, pipelining, chunked bodies, `100-continue`,
+- Own HTTP/1.1 server with two engines: `LOOM` (a virtual thread per connection) and `EVENT_LOOP` (N event loops,
+  JDK NIO or native Linux epoll through the FFM API). Keep-alive, pipelining, chunked bodies, `100-continue`,
   request smuggling checks, slowloris protection, graceful shutdown.
-- **Fast**: on a local TechEmpower-style benchmark Kalin beats Netty, Jetty and Javalin on plaintext and JSON
+- Fast: on a local TechEmpower-style benchmark Kalin beats Netty, Jetty and Javalin on plaintext and JSON
   ([numbers](docs/benchmarks.md)).
-- **Small and self-contained**: `kalin` depends only on `kotlin-stdlib`. Starts in ~50 ms, idles at ~6 MB heap.
-- **Kotlin first**: reified `ctx.bodyAsClass<T>()` / `ctx.json(value)`, context-parameter helpers, `suspend` handlers
+- Small and self-contained: `kalin` depends only on `kotlin-stdlib`. Starts in ~50 ms, idles at ~6 MB heap.
+- Kotlin first: reified `ctx.bodyAsClass<T>()` / `ctx.json(value)`, context-parameter helpers, `suspend` handlers
   on virtual threads, kotlinx.serialization, compile-time DI with kotlin-inject.
-- **Batteries for testing**: `testKalin { }` (Ktor style, in-memory or real sockets) and
+- Testing: `testKalin { }` (Ktor style, in-memory or real sockets) and
   `KalinTest.test(app) { server, client -> }` (Javalin style).
-- **`kalin-server`**: a standalone static file server (like a minimal nginx/Apache) built on Kalin.
+- `kalin-server`: a standalone static file server (like a minimal nginx/Apache) built on Kalin.
 
 > Kalin is a working name. HTTP/2, HTTP/3 and TLS are out of scope: put a reverse proxy in front (see
 > [Deployment](#deployment)). WebSocket is not supported, by design.
@@ -78,9 +78,9 @@ dependencies {
 | `kalin` | Engines, transports, router, `Context`, SSE, static files, validation, plugins | `kotlin-stdlib` |
 | `kalin-json` | `KotlinxJsonMapper` (registered automatically) | kotlinx-serialization-json |
 | `kalin-rendering-jte` | `KalinJte` template renderer | jte |
-| `kalin-testtools` | `testKalin { }`, `KalinTest`, test client, in-memory transport | — |
+| `kalin-testtools` | `testKalin { }`, `KalinTest`, test client, in-memory transport | none |
 | `kalin-inject` | `KalinComponent`, `KalinRoutes`, `@AppScope`, `config.install(component)` | kotlin-inject runtime |
-| `kalin-bundle` | `kalin` + `kalin-json` | — |
+| `kalin-bundle` | `kalin` + `kalin-json` | none |
 
 A build check (`./gradlew checkDependencies`, part of `check`) enforces the allowed runtime dependencies listed in
 [`dependency-allowlist.txt`](dependency-allowlist.txt).

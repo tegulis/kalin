@@ -1,4 +1,4 @@
-# Kalin — design document
+# Kalin design document
 
 > This is the original design document. Section 0 records how it was implemented and the decisions made on the way;
 > the rest is kept as written. User documentation is in the [README](../README.md).
@@ -20,7 +20,7 @@ other backlog items.
 
 | Topic | Decision | Reason |
 |---|---|---|
-| LOOM engine model | One virtual thread per connection with blocking channel I/O, instead of an own selector for idle connections | The JDK already parks blocked virtual threads on its own epoll poller; an extra selector adds a register/cancel round trip per request. Idle connections cost one parked virtual thread and a 8 KB buffer. |
+| LOOM engine model | One virtual thread per connection with blocking channel I/O, instead of an own selector for idle connections | The JDK already parks blocked virtual threads on its own epoll poller; an extra selector adds a register/cancel round trip per request. Idle connections cost one parked virtual thread and an 8 KB buffer. |
 | Timeouts | One hashed timer wheel per engine (LOOM/memory: a timer thread; event loops: advanced by each loop) with lazily re-bucketed deadlines | A deadline change is one volatile write; no queue operations on the hot path. The wheel also keeps a coarse clock for the hot path (clock reads are expensive with some clock sources). |
 | Default engine | `LOOM` | Benchmarks ([docs/benchmarks.md](benchmarks.md)): fastest for ordinary (blocking-allowed) handlers and pipelining; `EVENT_LOOP` wins for non-blocking handlers and is the choice for many idle connections. |
 | Default transport | `AUTO` = EPOLL for `EVENT_LOOP` on Linux when native access is enabled, else NIO | As specified. Without `--enable-native-access` Kalin falls back to NIO and logs one warning. |
@@ -42,7 +42,7 @@ other backlog items.
 | Plaintext and JSON faster than netty, jetty, javalin | Met on local runs: 8.2M / 1.25M req/s vs Netty 2.2M / 1.04M (see benchmarks) |
 | p99 not worse than Netty | Met for JSON (0.63 ms vs 0.83 ms) |
 | Startup < 100 ms | LOOM ~55 ms, EVENT_LOOP/NIO ~70 ms; EVENT_LOOP/EPOLL ~110 ms because of FFM stub generation (started in the background by `Kalin.create`) |
-| Idle heap < 15 MB with one route | 5.5–7.3 MB |
+| Idle heap < 15 MB with one route | 5.5 to 7.3 MB |
 | Handlers on virtual threads by default | Yes |
 | 50k open SSE clients with low memory (EVENT_LOOP) | Met: 50,000 streams in 243 MB heap with 19 platform threads |
 | `kalin-core` jar < 400 KB | Not met: ~670 KB. Most of it is Kotlin metadata and bytecode of the full §6.1 API (61 response exception classes alone are ~110 KB uncompressed). |
@@ -57,7 +57,7 @@ reruns the core suite over real sockets for each engine and transport (also in C
 ---
 
 A tiny, 100% Kotlin web framework with a Javalin-compatible API and its own HTTP/1.1 server.
-No Jetty, no Netty, no Servlet API. Faster than Javalin, Jetty and Netty on TechEmpower.
+It uses no Jetty, Netty or Servlet API and is faster than Javalin, Jetty and Netty on TechEmpower.
 
 > "Kalin" is a working name. Rename before the first release.
 
@@ -243,9 +243,9 @@ Rule: `Engine.LOOM` supports only `Transport.NIO`. A virtual thread that blocks 
 | `kalin-rendering-jte` | `KalinJte` `FileRenderer` adapter | jte (approved, see §5.4) |
 | `kalin-testtools` | `testKalin { }`, `KalinTest.test(app) { }`, test client, in-memory transport | Kotlin stdlib (+ JDK `HttpClient`) |
 | `kalin-inject` | `@AppScope`, `KalinComponent`, `KalinRoutes`, `config.install(component)` | kotlin-inject runtime (approved) |
-| `kalin-bundle` | core + json | — |
-| `benchmarks/tfb` | TFB app and scripts (uses `kalin-rendering-jte` for Fortunes; DB driver TBD) | — |
-| `examples/` | hello, rest-users (Baeldung port), static, sse, jte, testing, inject | — |
+| `kalin-bundle` | core + json | none |
+| `benchmarks/tfb` | TFB app and scripts (uses `kalin-rendering-jte` for Fortunes; DB driver TBD) | none |
+| `examples/` | hello, rest-users (Baeldung port), static, sse, jte, testing, inject | none |
 
 ### 5.1 JSON (`kalin-json`)
 
@@ -289,7 +289,7 @@ Kalin.create { config ->
 - `KalinJte.directoryTemplateEngine(path = "src/main/jte")` for dev hot reload.
 - Implements `StreamingFileRenderer` with jte's UTF-8 byte output (pre-encoded static parts) for best speed.
 - Supports `.jte` and `.kte` templates. Precompile them with the official jte Gradle plugin; docs show the setup.
-- Kotlin `.kte` hot reload needs `gg.jte:jte-kotlin` (pulls the Kotlin compiler) — dev-only dependency, documented.
+- Kotlin `.kte` hot reload needs `gg.jte:jte-kotlin` (pulls the Kotlin compiler). It is a dev-only dependency and is documented.
 - Typed calls: works with jte's generated `Templates` facade (`jte-models`) as an extra, documented in the example.
 
 ### 5.3 Test tools (`kalin-testtools`)
@@ -473,7 +473,7 @@ Multipart (`uploadedFile(s)`, `uploadedFileMap`, `isMultipart*`), `writeSeekable
 
 The complete, current list is in [differences-javalin.md](differences-javalin.md) (and [differences-ktor.md](differences-ktor.md) for Ktor users). Summary:
 
-- No WebSocket API (`ws*`, `wsException`, `requestLogger.ws`) — by design, never added.
+- No WebSocket API (`ws*`, `wsException`, `requestLogger.ws`), by design. It will not be added.
 - `config.jetty.*` → `config.server.*`. No servlet objects, no `ctx.req()` / `ctx.res()`; `ctx.exchange()` gives the raw engine exchange.
 - `useVirtualThreads` is always effectively on for handlers.
 - Default JSON is kotlinx.serialization, not Jackson.
@@ -483,14 +483,14 @@ The complete, current list is in [differences-javalin.md](differences-javalin.md
 
 ## 7. Milestones (one developer + AI)
 
-### M0 – Setup (1 week)
+### M0: Setup (1 week)
 
 - Gradle multi-module, Kotlin 2.4+, JDK 25 toolchain, `explicitApi()`, `-Xreturn-value-checker=check`, `-Werror`, ktlint/detekt, CI on Ubuntu + Windows.
 - Dependency guard: CI fails if `kalin-core` runtime classpath has anything but `kotlin-stdlib`, or if any module adds an unapproved dependency (allow-list file).
 - Spike: kotlin-inject 0.9.x + KSP2 with Kotlin 2.4 and context parameters in one module. If it fails, decide on Metro before M1.
 - Local TFB setup (Docker) running the `netty`, `jetty` and `javalin` entries to get baseline numbers on our hardware.
 
-### M1 – MVP: LOOM engine, Javalin core, SSE, JSON (8–10 weeks)
+### M1: MVP with LOOM engine, Javalin core, SSE, JSON (8 to 10 weeks)
 
 | # | Work item | Done when |
 |---|---|---|
@@ -511,7 +511,7 @@ The complete, current list is in [differences-javalin.md](differences-javalin.md
 
 **Exit:** §6.1 API works, CI green on Linux + Windows, size/startup targets met.
 
-### M2 – EVENT_LOOP engine + native epoll (10–12 weeks)
+### M2: EVENT_LOOP engine + native epoll (10 to 12 weeks)
 
 | # | Work item | Done when |
 |---|---|---|
@@ -522,11 +522,11 @@ The complete, current list is in [differences-javalin.md](differences-javalin.md
 | 5 | Handler execution modes, `NonBlockingHandler` | Both modes pass the suite |
 | 6 | `ctx.future`, `ctx.async(cfg)`, suspend handlers | Ported async tests; 100k suspended requests < 1 GB heap |
 | 7 | SSE on event loop | 50k open SSE clients |
-| 8 | Profiling and tuning (JFR, async-profiler, allocation budget) | **Plaintext and JSON beat `netty`, `jetty`, `javalin` in local TFB** |
+| 8 | Profiling and tuning (JFR, async-profiler, allocation budget) | Plaintext and JSON beat `netty`, `jetty`, `javalin` in local TFB |
 
 **Exit:** the suite runs on every engine × transport combination; benchmark report; pick default engine.
 
-### M3 – Full TFB + remaining API (4–6 weeks)
+### M3: Full TFB + remaining API (4 to 6 weeks)
 
 - Multipart, Range, `writeJsonStream`, `cookieStore()`.
 - TFB app for Fortunes (via `kalin-rendering-jte`), single query, multiple queries, updates, cached queries (DB driver choice needs approval, §11).
@@ -620,7 +620,7 @@ context(client: TestClient)
 fun login(user: String): String = client.post("/login") { form("user" to user) }.header("Set-Cookie")!!
 ```
 
-**4. Engine internals.** Per-loop resources are passed as context: `context(loop: EventLoop, pool: BufferPool) fun Connection.onReadable()`. No thread-locals on the hot path.
+**4. Engine internals.** Per-loop resources are passed as context: `context(loop: EventLoop, pool: BufferPool) fun Connection.onReadable()`, so the hot path needs no thread-locals.
 
 **Rules:**
 - Do not overload the same name with and without context parameters. Since Kotlin 2.3.20 such calls can be ambiguous and fail to compile.

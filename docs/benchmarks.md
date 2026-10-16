@@ -10,8 +10,8 @@ separate CPU sets. Numbers are indicative, not TechEmpower results; rerun them o
 - `plaintext`: `GET /plaintext` → `Hello, World!`, pipelined 16 deep (as in TechEmpower).
 - `json`: `GET /json` → `{"message":"Hello, World!"}`, one request per round trip.
 - Kalin: `benchmarks` module (`Tfb.kt`), endpoints marked `nonBlocking`, 12 event loops, compression off.
-- Baselines (`benchmarks/baselines`): the TechEmpower **Netty** entry (Netty 4.2.19, native epoll), a plain
-  **Jetty** 12.1 core handler, **Javalin** 7.2.3 with virtual threads.
+- Baselines (`benchmarks/baselines`): the TechEmpower Netty entry (Netty 4.2.19, native epoll), a plain Jetty
+  12.1 core handler, Javalin 7.2.3 with virtual threads.
 
 ## Results
 
@@ -69,8 +69,8 @@ background so it overlaps with application startup.
 
 - Byte-level parsing into reused buffers, pre-encoded status lines and a cached `Date` header.
 - Responses of pipelined requests are batched into one write; a whole response (head and body) is one `write`.
-- Native epoll (edge-triggered) through FFM `critical` downcalls that read and write Java heap arrays directly, no
-  copies through direct buffers. `EPOLLOUT` is only registered while a write is incomplete.
+- Native epoll (edge-triggered) through FFM `critical` downcalls that read and write Java heap arrays directly,
+  without copies through direct buffers. `EPOLLOUT` is only registered while a write is incomplete.
 - No clock reads on the hot path: deadlines and the `Date` header use a coarse clock maintained by the timer wheel
   (this matters on machines with a slow clock source such as HPET).
 - JSON: kotlinx.serialization with serializers looked up once per type; small values are encoded without the
