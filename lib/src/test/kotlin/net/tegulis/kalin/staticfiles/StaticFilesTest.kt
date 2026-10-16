@@ -162,6 +162,61 @@ class StaticFilesTest :
             }
         }
 
+        test("ETags differ per content coding and validate across codings") {
+            testKalin {
+                app {
+                    staticFiles.add {
+                        it.directory = root.absolutePath
+                        it.location = Location.EXTERNAL
+                        it.precompressedFiles = true
+                    }
+                }
+                for (path in listOf("/big.js", "/pre.css")) {
+                    val identity = client.get(path)
+                    val gzip = client.get(path) { header("Accept-Encoding", "gzip") }
+                    gzip.header("Content-Encoding") shouldBe "gzip"
+                    val tag = identity.header("ETag")!!
+                    gzip.header("ETag") shouldBe tag.removeSuffix("\"") + "-gzip\""
+                    identity.header("Vary") shouldBe "Accept-Encoding"
+                    client
+                        .get(path) {
+                            header("Accept-Encoding", "gzip")
+                            header("If-None-Match", tag)
+                        }
+                        .let {
+                            it.code shouldBe 304
+                            it.header("ETag") shouldBe gzip.header("ETag")
+                            it.header("Vary") shouldBe "Accept-Encoding"
+                        }
+                    client.get(path) { header("If-None-Match", "W/" + gzip.header("ETag")) }.code shouldBe 304
+                    client.get(path) { header("If-None-Match", "\"other\"") }.code shouldBe 200
+                    // Ranges are sent uncompressed, so only the identity tag satisfies If-Range
+                    client
+                        .get(path) {
+                            header("Accept-Encoding", "gzip")
+                            header("Range", "bytes=0-1")
+                            header("If-Range", gzip.header("ETag")!!)
+                        }
+                        .let {
+                            it.code shouldBe 200
+                            it.header("Content-Encoding") shouldBe "gzip"
+                        }
+                    client
+                        .get(path) {
+                            header("Accept-Encoding", "gzip")
+                            header("Range", "bytes=0-1")
+                            header("If-Range", tag)
+                        }
+                        .let {
+                            it.code shouldBe 206
+                            it.header("ETag") shouldBe tag
+                            it.header("Content-Encoding") shouldBe null
+                        }
+                }
+                client.get("/hello.txt").header("Vary") shouldBe null
+            }
+        }
+
         test("classpath files, hosted path and custom headers") {
             testKalin {
                 app {

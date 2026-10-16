@@ -230,14 +230,19 @@ internal class StaticLocation(val config: StaticFileConfig) {
         config.headers.forEach { (k, v) -> ctx.header(k, v) }
         val mime = MimeTypes.withCharset(MimeTypes.forFileName(resource.name, config.mimeTypes.extensionToMimeType))
         ctx.contentType(mime)
-        val etag =
+        // Decided before the conditional checks so that a 304 also carries `Vary: Accept-Encoding`
+        val encoding = ctx.compressionFor(mime, resource.size)
+        // Strong validators differ per content coding: "tag" (identity), "tag-gzip", "tag-deflate"
+        val baseTag =
             if (config.conditionalRequests)
-                "\"${java.lang.Long.toHexString(resource.lastModified)}-${java.lang.Long.toHexString(resource.size)}\""
+                "${java.lang.Long.toHexString(resource.lastModified)}-${java.lang.Long.toHexString(resource.size)}"
             else null
-        if (etag != null) {
+        val identityTag = baseTag?.let { "\"$it\"" }
+        val etag = baseTag?.let { if (encoding == null) identityTag else "\"$it-${encoding.typeName}\"" }
+        if (baseTag != null && etag != null) {
             ctx.header(Header.ETAG, etag)
             if (resource.lastModified > 0) ctx.header(Header.LAST_MODIFIED, HttpDates.format(resource.lastModified))
-            if (notModified(ctx, etag, resource.lastModified)) {
+            if (notModified(ctx, baseTag, resource.lastModified)) {
                 ctx.status(HttpStatus.NOT_MODIFIED)
                 ctx.removeHeader(Header.CONTENT_TYPE)
                 ctx.resultEmpty()
@@ -246,7 +251,8 @@ internal class StaticLocation(val config: StaticFileConfig) {
         }
         ctx.header(Header.ACCEPT_RANGES, "bytes")
         val range = ctx.header(Header.RANGE)
-        if (range != null && ifRangeMatches(ctx, etag, resource.lastModified)) {
+        // Partial responses are never compressed, so If-Range is checked against the identity tag
+        if (range != null && ifRangeMatches(ctx, identityTag, resource.lastModified)) {
             val parsed = parseRange(range, resource.size)
             when {
                 parsed == null -> {} // invalid or multiple ranges: serve the full resource
@@ -260,6 +266,7 @@ internal class StaticLocation(val config: StaticFileConfig) {
                 else -> {
                     val (start, end) = parsed
                     ctx.status(HttpStatus.PARTIAL_CONTENT)
+                    identityTag?.let { ctx.header(Header.ETAG, it) }
                     ctx.header(Header.CONTENT_RANGE, "bytes $start-$end/${resource.size}")
                     ctx.disableCompression()
                     ctx.resultResource(resource, start, end - start + 1)
@@ -268,7 +275,6 @@ internal class StaticLocation(val config: StaticFileConfig) {
             }
         }
         // Precompressed sibling (file.gz)
-        val encoding = ctx.compressionFor(mime, resource.size)
         if (config.precompressedFiles && resource is Resource.FileResource && encoding == CompressionType.GZIP) {
             val gz = resource.path.resolveSibling(resource.path.fileName.toString() + ".gz")
             if (Files.isRegularFile(gz, LinkOption.NOFOLLOW_LINKS)) {
@@ -300,10 +306,18 @@ internal class StaticLocation(val config: StaticFileConfig) {
             else -> name
         }
 
-    private fun notModified(ctx: Context, etag: String, lastModified: Long): Boolean {
+    /** True if a validator matches; If-None-Match accepts the tag of any content coding of the resource. */
+    private fun notModified(ctx: Context, baseTag: String, lastModified: Long): Boolean {
         val inm = ctx.header(Header.IF_NONE_MATCH)
         if (inm != null) {
-            return inm.split(',').any { it.trim() == "*" || it.trim().removePrefix("W/") == etag }
+            return inm.split(',').any {
+                val tag = it.trim()
+                if (tag == "*") return@any true
+                val quoted = tag.removePrefix("W/")
+                if (quoted.length < 2 || !quoted.startsWith('"') || !quoted.endsWith('"')) return@any false
+                val opaque = quoted.substring(1, quoted.length - 1)
+                opaque == baseTag || CompressionType.entries.any { type -> opaque == "$baseTag-${type.typeName}" }
+            }
         }
         val ims = ctx.header(Header.IF_MODIFIED_SINCE) ?: return false
         val since = HttpDates.parse(ims) ?: return false
