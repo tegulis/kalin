@@ -52,6 +52,12 @@ class SseTest :
             }
         }
 
+        test("comments cannot inject fields through any line terminator") {
+            val out = java.io.ByteArrayOutputStream()
+            Emitter(out).emit("a\rdata: evil\r\nb\nc")
+            out.toString(Charsets.UTF_8) shouldBe ": a\n: data: evil\n: b\n: c\n\n"
+        }
+
         test("keepAlive clients can be used from other threads and closed") {
             val clients = ConcurrentLinkedQueue<SseClient>()
             val closed = CountDownLatch(1)

@@ -51,7 +51,7 @@ public class Emitter internal constructor(private val out: OutputStream) {
     public fun emit(comment: String) {
         synchronized(this) {
             buffer.reset()
-            for (line in comment.split('\n')) buffer.writeUtf8(": ${line.removeSuffix("\r")}\n")
+            for (line in comment.split(LINE_BREAK)) buffer.writeUtf8(": $line\n")
             buffer.writeAscii("\n")
             flushBuffer()
         }
@@ -79,6 +79,11 @@ public class Emitter internal constructor(private val out: OutputStream) {
     private fun java.io.ByteArrayOutputStream.writeAscii(s: String) = write(s.toByteArray(Charsets.ISO_8859_1))
 
     private fun java.io.ByteArrayOutputStream.writeUtf8(s: String) = write(s.toByteArray(Charsets.UTF_8))
+
+    private companion object {
+        /** SSE line terminators: CRLF, a lone CR or a lone LF. */
+        val LINE_BREAK = Regex("\r\n|\r|\n")
+    }
 }
 
 /**
