@@ -444,6 +444,7 @@ The design document with background and decisions is in [docs/DESIGN.md](docs/DE
 ./gradlew :examples:run -Pexample=RestUsers
 ./gradlew :benchmarks:installDist       # TechEmpower-style app, see docs/benchmarks.md
 ./gradlew publishAllPublicationsToStagingRepository   # local staging repository in build/staging-repo
+./gradlew :dokkaGenerate                # API documentation in build/dokka/html
 ```
 
 ## License

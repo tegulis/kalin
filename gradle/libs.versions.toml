@@ -1,4 +1,5 @@
 [versions]
+dokka = "2.2.0"
 gradle-ktfmt = "0.27.0"
 gradle-shadow = "9.6.1"
 gradle-versions = "0.54.0"
@@ -28,6 +29,8 @@ slf4j = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-jdk-platform-logging = { module = "org.slf4j:slf4j-jdk-platform-logging", version.ref = "slf4j" }
 
 [plugins]
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
+dokka-javadoc = { id = "org.jetbrains.dokka-javadoc", version.ref = "dokka" }
 jte = { id = "gg.jte.gradle", version.ref = "jte" }
 kotest = { id = "io.kotest", version.ref = "kotest" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

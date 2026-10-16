@@ -16,6 +16,7 @@ plugins {
     alias(libs.plugins.kotest) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.jte) apply false
+    alias(libs.plugins.dokka)
 }
 
 allprojects {
@@ -114,8 +115,25 @@ subprojects {
     publishedModules[name]?.let { artifact ->
         apply(plugin = "java-library")
         apply(plugin = "maven-publish")
-        // Sources come from the Kotlin plugin's kotlinSourcesJar (added to the publication below)
-        extensions.configure<JavaPluginExtension> { withJavadocJar() }
+        // Sources come from the Kotlin plugin's kotlinSourcesJar; the javadoc jar holds the Dokka HTML documentation
+        apply(plugin = "org.jetbrains.dokka")
+        extensions.configure<org.jetbrains.dokka.gradle.DokkaExtension> {
+            moduleName.set(artifact)
+            dokkaGeneratorIsolation.set(
+                ProcessIsolation {
+                    maxHeapSize.set("2g")
+                    jvmArgs.add("-XX:ActiveProcessorCount=4")
+                }
+            )
+        }
+        val dokkaJar =
+            tasks.register<Jar>("dokkaJar") {
+                group = "documentation"
+                description = "Packs the Dokka HTML documentation as the javadoc jar"
+                archiveClassifier.set("javadoc")
+                dependsOn("dokkaGeneratePublicationHtml")
+                from(layout.buildDirectory.dir("dokka/html"))
+            }
         tasks.withType<Jar>().configureEach {
             archiveBaseName.set(artifact)
             manifest {
@@ -132,6 +150,7 @@ subprojects {
                     artifactId = artifact
                     from(components["java"])
                     afterEvaluate { artifact(tasks.named("kotlinSourcesJar")) { classifier = "sources" } }
+                    artifact(dokkaJar)
                     pom {
                         name.set(artifact)
                         description.set(
@@ -203,3 +222,10 @@ subprojects {
         }
     tasks.matching { it.name == "check" }.configureEach { dependsOn(checkDependencies) }
 }
+
+repositories { mavenCentral() }
+
+dokka { moduleName.set("Kalin") }
+
+// Aggregated API documentation of all published modules: ./gradlew :dokkaGenerate (build/dokka/html)
+dependencies { publishedModules.keys.forEach { dokka(project(":$it")) } }
