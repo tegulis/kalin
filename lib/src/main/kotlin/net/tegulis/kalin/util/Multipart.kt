@@ -66,22 +66,28 @@ internal object Multipart {
             ?.removeSurrounding("\"")
             ?.ifEmpty { null }
 
-    fun parse(ctx: Context, config: MultipartConfig): Parsed {
+    /**
+     * Parses the multipart body of [ctx]. [maxRequestSize] (`http.maxRequestSize`) limits the body when
+     * [MultipartConfig.maxTotalRequestSize] is -1.
+     */
+    fun parse(ctx: Context, config: MultipartConfig, maxRequestSize: Long): Parsed {
         val contentType = ctx.header(Header.CONTENT_TYPE) ?: throw BadRequestResponse("Missing Content-Type")
         val boundary = boundary(contentType) ?: throw BadRequestResponse("Missing multipart boundary")
-        if (config.maxTotalRequestSize >= 0 && ctx.exchange().requestContentLength > config.maxTotalRequestSize)
-            throw ContentTooLargeResponse("Multipart request exceeds ${config.maxTotalRequestSize} bytes")
+        val maxTotal = if (config.maxTotalRequestSize >= 0) config.maxTotalRequestSize else maxRequestSize
+        if (maxTotal >= 0 && ctx.exchange().requestContentLength > maxTotal)
+            throw ContentTooLargeResponse("Multipart request exceeds $maxTotal bytes")
         val input = ctx.bodyInputStream()
-        return parse(input, boundary, config)
+        return parse(input, boundary, config, maxTotal)
     }
 
-    fun parse(input: InputStream, boundary: String, config: MultipartConfig): Parsed {
-        val reader =
-            DelimitedReader(input, ("\r\n--$boundary").toByteArray(Charsets.ISO_8859_1), config.maxTotalRequestSize)
+    fun parse(input: InputStream, boundary: String, config: MultipartConfig, maxTotal: Long): Parsed {
+        val reader = DelimitedReader(input, ("\r\n--$boundary").toByteArray(Charsets.ISO_8859_1), maxTotal)
+        val budget = MemoryBudget(config.maxInMemoryTotalSize())
         val fields = LinkedHashMap<String, MutableList<String>>()
         val files = LinkedHashMap<String, MutableList<UploadedFile>>()
         val temp = ArrayList<Path>()
         var sink: SpillingSink? = null
+        var parts = 0
         try {
             // Preamble: the first delimiter has no leading CRLF
             reader.skipPreamble()
@@ -91,6 +97,8 @@ internal object Multipart {
                 val b = reader.readByte()
                 if (a == '-'.code && b == '-'.code) break
                 if (a != '\r'.code || b != '\n'.code) throw BadRequestResponse("Malformed multipart body")
+                if (++parts > config.maxParts)
+                    throw ContentTooLargeResponse("Multipart request has more than ${config.maxParts} parts")
                 val headers = reader.readHeaders()
                 val disposition =
                     headers["content-disposition"]?.firstOrNull()
@@ -105,7 +113,7 @@ internal object Multipart {
                     val charset = partType?.let { charsetOf(it) } ?: Charsets.UTF_8
                     fields.getOrPut(name) { ArrayList(1) }.add(bos.toString(charset))
                 } else {
-                    val s = SpillingSink(config, temp).also { sink = it }
+                    val s = SpillingSink(config, budget, temp).also { sink = it }
                     reader.readPart(s, config.maxFileSize)
                     s.close()
                     sink = null
@@ -171,9 +179,20 @@ internal object Multipart {
         return java.net.URLDecoder.decode(parts[2].replace("+", "%2B"), charset)
     }
 
-    /** Collects a file part in memory and spills to a temp file when it grows large. */
-    private class SpillingSink(private val config: MultipartConfig, private val temp: MutableList<Path>) :
-        OutputStream() {
+    /** Bytes of file parts currently held in memory, shared by all parts of one request. */
+    private class MemoryBudget(val max: Long) {
+        var used = 0L
+    }
+
+    /**
+     * Collects a file part in memory and spills to a temp file when it grows larger than `maxInMemoryFileSize` or the
+     * request's in-memory [budget] runs out.
+     */
+    private class SpillingSink(
+        private val config: MultipartConfig,
+        private val budget: MemoryBudget,
+        private val temp: MutableList<Path>,
+    ) : OutputStream() {
         private var memory: ByteArrayOutputStream? = ByteArrayOutputStream()
         var file: Path? = null
             private set
@@ -188,10 +207,12 @@ internal object Multipart {
             size += len
             val mem = memory
             if (mem != null) {
-                if (mem.size() + len <= config.maxInMemoryFileSize) {
+                if (mem.size() + len <= config.maxInMemoryFileSize && budget.used + len <= budget.max) {
                     mem.write(b, off, len)
+                    budget.used += len
                     return
                 }
+                budget.used -= mem.size()
                 val dir = config.cacheDirectory?.let { Paths.get(it) }
                 val f =
                     if (dir != null) Files.createTempFile(dir, "kalin-upload-", ".tmp")

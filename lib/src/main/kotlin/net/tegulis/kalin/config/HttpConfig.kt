@@ -48,11 +48,26 @@ public class MultipartConfig {
     /** The maximum size of one uploaded file, -1 for unlimited. */
     public var maxFileSize: Long = -1
 
-    /** Files up to this size are kept in memory. */
+    /**
+     * Files up to this size are kept in memory. The file parts of one request share an in-memory budget of four times
+     * this size; once it is used up, further files spill to [cacheDirectory] regardless of their size.
+     */
     public var maxInMemoryFileSize: Long = 1024 * 1024
 
-    /** The maximum size of a complete multipart request, -1 for unlimited. */
+    /**
+     * The maximum size of a complete multipart request. -1 (the default) falls back to [HttpConfig.maxRequestSize], so
+     * the effective default is 1 MB. Larger requests are answered with `413 Content Too Large`.
+     */
     public var maxTotalRequestSize: Long = -1
+
+    /**
+     * The maximum number of parts (fields and files) in one multipart request. Requests with more parts are answered
+     * with `413 Content Too Large`.
+     */
+    public var maxParts: Int = 1000
+
+    internal fun maxInMemoryTotalSize(): Long =
+        if (maxInMemoryFileSize > Long.MAX_VALUE / 4) Long.MAX_VALUE else maxInMemoryFileSize * 4
 
     /** Sets [cacheDirectory]. */
     public fun cacheDirectory(path: String): MultipartConfig = apply { cacheDirectory = path }
@@ -69,6 +84,9 @@ public class MultipartConfig {
     public fun maxTotalRequestSize(size: Long, unit: SizeUnit): MultipartConfig = apply {
         maxTotalRequestSize = size * unit.multiplier
     }
+
+    /** Sets [maxParts]. */
+    public fun maxParts(count: Int): MultipartConfig = apply { maxParts = count }
 }
 
 /** Size units for [MultipartConfig]. */

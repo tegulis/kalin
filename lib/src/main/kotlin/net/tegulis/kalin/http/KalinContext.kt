@@ -200,7 +200,7 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
         cachedMultipart?.let {
             return it
         }
-        val parsed = Multipart.parse(this, multipartConfig())
+        val parsed = Multipart.parse(this, multipartConfig(), state.maxRequestSize)
         cachedMultipart = parsed
         return parsed
     }

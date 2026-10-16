@@ -58,4 +58,65 @@ class MultipartTest :
                 Files.deleteIfExists(dir)
             }
         }
+
+        test("maxTotalRequestSize falls back to http.maxRequestSize") {
+            testKalin {
+                app {
+                    http.maxRequestSize = 400
+                    routes.post("/upload") { ctx -> ctx.result("${ctx.uploadedFile("file")?.size()}") }
+                }
+                client
+                    .post("/upload") { multipart(files = listOf(MultipartFile("file", "a.bin", ByteArray(500)))) }
+                    .code shouldBe 413
+                client
+                    .post("/upload") { multipart(files = listOf(MultipartFile("file", "a.bin", ByteArray(10)))) }
+                    .bodyAsText() shouldBe "10"
+            }
+            testKalin {
+                app {
+                    http.maxRequestSize = 400
+                    http.multipartConfig.maxTotalRequestSize = 1000
+                    routes.post("/upload") { ctx -> ctx.result("${ctx.uploadedFile("file")?.size()}") }
+                }
+                client
+                    .post("/upload") { multipart(files = listOf(MultipartFile("file", "a.bin", ByteArray(500)))) }
+                    .bodyAsText() shouldBe "500"
+            }
+        }
+
+        test("maxParts limits the number of parts") {
+            testKalin {
+                app {
+                    http.multipartConfig.maxParts(2)
+                    routes.post("/upload") { ctx -> ctx.result("${ctx.formParamMap().size}") }
+                }
+                client.post("/upload") { multipart(fields = mapOf("a" to "1", "b" to "2")) }.bodyAsText() shouldBe "2"
+                client.post("/upload") { multipart(fields = mapOf("a" to "1", "b" to "2", "c" to "3")) }.code shouldBe
+                    413
+            }
+        }
+
+        test("files spill to disk once the in-memory budget is used") {
+            val dir = Files.createTempDirectory("kalin-multipart-test")
+            try {
+                testKalin {
+                    app {
+                        http.multipartConfig.maxInMemoryFileSize = 10
+                        http.multipartConfig.cacheDirectory = dir.toString()
+                        routes.post("/upload") { ctx ->
+                            val sizes = ctx.uploadedFiles("f").map { it.size() }
+                            ctx.result("${dir.fileCount()}|$sizes")
+                        }
+                    }
+                    client
+                        .post("/upload") {
+                            multipart(files = (1..5).map { MultipartFile("f", "$it.bin", ByteArray(10)) })
+                        }
+                        .bodyAsText() shouldBe "1|[10, 10, 10, 10, 10]"
+                    waitUntilEmpty(dir)
+                }
+            } finally {
+                Files.deleteIfExists(dir)
+            }
+        }
     })
