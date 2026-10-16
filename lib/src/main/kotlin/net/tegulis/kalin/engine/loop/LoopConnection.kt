@@ -282,11 +282,19 @@ internal class LoopConnection(
 
     private var inlineBytes: ByteArray? = null
 
+    /** True while an inline handler runs; a synchronous completion then lets [process] continue iteratively. */
+    private var dispatching = false
+
     private fun dispatchInline(exchange: Http1Exchange, body: ByteArray?) {
         inlineBytes = body
         state = HANDLING
-        runtime.runHandler(exchange)
-        // completion (if synchronous) already moved the state on
+        dispatching = true
+        try {
+            runtime.runHandler(exchange)
+        } finally {
+            dispatching = false
+        }
+        // a synchronous completion already moved the state on; the caller's process() loop continues
     }
 
     // ---- request body pipe (virtual-thread handlers) -----------------------------------------------------
@@ -441,13 +449,18 @@ internal class LoopConnection(
             pipe = null
             drainedBytes = 0
             state = DRAIN_BODY
-            process()
-            flushIfIdle()
+            if (!dispatching) {
+                process()
+                flushIfIdle()
+            }
             return
         }
         nextRequest()
-        process()
-        flushIfIdle()
+        // Inside an inline dispatch the enclosing process() loop handles further pipelined requests (no recursion)
+        if (!dispatching) {
+            process()
+            flushIfIdle()
+        }
     }
 
     private fun nextRequest() {

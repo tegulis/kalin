@@ -6,6 +6,7 @@ import java.io.InputStream
 import java.net.Socket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 import net.tegulis.kalin.Kalin
 import net.tegulis.kalin.http.nonBlocking
 import net.tegulis.kalin.testtools.TestMode
@@ -167,3 +168,22 @@ private fun countBytes(input: InputStream): Long {
         total += n
     }
 }
+
+class DeepPipelineTest :
+    FunSpec({
+        for (execution in HandlerExecution.entries) {
+            test("thousands of pipelined requests in one write ($execution)") {
+                testKalin(mode = TestMode.REAL, engine = Engine.EVENT_LOOP, transport = Transport.NIO) {
+                    app {
+                        server.handlerExecution = execution
+                        server.eventLoops = 1
+                        server.maxRequestLineSize = 64 * 1024
+                        routes.get("/", nonBlocking { it.result("x") })
+                    }
+                    val count = 20_000
+                    val request = "GET / HTTP/1.1\r\nHost: x\r\n\r\n".repeat(count)
+                    client.raw(request, responses = count, timeout = 60.seconds).responses.size shouldBe count
+                }
+            }
+        }
+    })
