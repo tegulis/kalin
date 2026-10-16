@@ -108,4 +108,11 @@ internal abstract class EventLoop(val name: String, val runtime: ServerRuntime) 
         running = false
         wakeup()
     }
+
+    /** Releases the resources of a loop that was never started (a failed server start). */
+    fun closeUnstarted() {
+        check(!::thread.isInitialized) { "Event loop $name was started" }
+        running = false
+        cleanup()
+    }
 }

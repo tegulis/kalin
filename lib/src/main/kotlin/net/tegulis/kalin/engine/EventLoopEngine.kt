@@ -43,7 +43,13 @@ internal class EventLoopEngine(private val runtime: ServerRuntime, private val e
                         if (config.reusePort || i == 0)
                             EpollEventLoop.listen(scratch, config.host, port, config.backlog)
                         else -1
-                    val loop = EpollEventLoop("kalin-epoll-$i", runtime, fd)
+                    val loop =
+                        try {
+                            EpollEventLoop("kalin-epoll-$i", runtime, fd)
+                        } catch (e: Exception) {
+                            if (fd >= 0) Native.close(scratch, fd)
+                            throw e
+                        }
                     if (i == 0) {
                         address = loop.localAddress
                         port = address?.port ?: port
@@ -56,7 +62,9 @@ internal class EventLoopEngine(private val runtime: ServerRuntime, private val e
                 }
             }
         } catch (e: Exception) {
-            loops.forEach { it.shutdown() }
+            // Nothing was started yet: release every loop's listening socket and descriptors now
+            loops.forEach { it.closeUnstarted() }
+            loops.clear()
             throw e
         }
         loops.forEach { it.start() }
@@ -77,8 +85,16 @@ internal class EventLoopEngine(private val runtime: ServerRuntime, private val e
             channel.close()
             throw e
         }
+        try {
+            repeat(count) { loops.add(NioEventLoop("kalin-loop-$it", runtime)) }
+        } catch (e: IOException) {
+            loops.forEach { it.closeUnstarted() }
+            loops.clear()
+            channel.close()
+            throw e
+        }
         server = channel
-        repeat(count) { loops.add(NioEventLoop("kalin-loop-$it", runtime).also { l -> l.start() }) }
+        loops.forEach { it.start() }
         acceptor = Thread.ofPlatform().name("kalin-acceptor").start { acceptLoop(channel) }
         return channel.localAddress as InetSocketAddress
     }

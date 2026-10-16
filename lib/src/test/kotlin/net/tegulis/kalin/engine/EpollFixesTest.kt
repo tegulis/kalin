@@ -3,6 +3,8 @@ package net.tegulis.kalin.engine
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.lang.foreign.Arena
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicBoolean
@@ -73,6 +75,19 @@ class EpollFixesTest :
                 // A handler thread finishing late still hands work to the loop
                 loop.execute {}
                 loop.shutdown()
+            }
+
+            test("a loop that never started releases its listening socket") {
+                val (listenFd, port) =
+                    Arena.ofConfined().use {
+                        val s = Native.Scratch(it)
+                        val fd = EpollEventLoop.listen(s, "127.0.0.1", 0, 16)
+                        fd to Native.localAddress(s, fd)!!.port
+                    }
+                val loop = EpollEventLoop("test-unstarted", runtime(), listenFd)
+                loop.closeUnstarted()
+                // The port is free again (it stays bound while the listening socket is open)
+                ServerSocket(port, 16, InetAddress.getByName("127.0.0.1")).close()
             }
 
             test("failing accepts pause the listener instead of spinning, then accepting resumes") {

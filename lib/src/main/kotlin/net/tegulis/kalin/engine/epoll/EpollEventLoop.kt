@@ -14,15 +14,16 @@ import net.tegulis.kalin.engine.loop.LoopSocket
 
 /**
  * An event loop on Linux epoll (edge-triggered) through FFM. Each loop owns its own listening socket (`SO_REUSEPORT`),
- * so the kernel balances new connections between loops without a shared acceptor.
+ * so the kernel balances new connections between loops without a shared acceptor. If the constructor throws, the caller
+ * still owns `listenFd`.
  */
 internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val listenFd: Int) :
     EventLoop(name, runtime) {
     private val arena: Arena = Arena.ofShared()
     internal val scratch = Native.Scratch(arena)
     private val wakeupScratch = Native.Scratch(arena)
-    private val epfd = Native.epollCreate(scratch)
-    private val eventFd = Native.eventfd(scratch)
+    private val epfd: Int
+    private val eventFd: Int
     private val maxEvents = 512
     private val events: MemorySegment = arena.allocate(Native.epollEventSize * maxEvents, 8)
     private val peer: MemorySegment = arena.allocate(64, 8)
@@ -40,8 +41,21 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
     private var acceptResumeAt = 0L
 
     init {
-        Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, eventFd, Native.EPOLLIN, TAG_WAKEUP)
-        if (listenFd >= 0) Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
+        var ep = -1
+        var ev = -1
+        try {
+            ep = Native.epollCreate(scratch)
+            ev = Native.eventfd(scratch)
+            Native.epollCtl(scratch, ep, Native.EPOLL_CTL_ADD, ev, Native.EPOLLIN, TAG_WAKEUP)
+            if (listenFd >= 0) Native.epollCtl(scratch, ep, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
+        } catch (e: Exception) {
+            if (ev >= 0) Native.close(scratch, ev)
+            if (ep >= 0) Native.close(scratch, ep)
+            arena.close()
+            throw e
+        }
+        epfd = ep
+        eventFd = ev
     }
 
     /** Set once the eventfd and arena are released; guarded by the wakeup lock. */
