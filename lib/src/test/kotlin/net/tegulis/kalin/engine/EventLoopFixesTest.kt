@@ -226,6 +226,20 @@ class EventLoopFixesTest :
                     }
                 }
 
+                for (nonBlocking in listOf(false, true)) {
+                    test("a missing file fails before the response head (nonBlocking=$nonBlocking)") {
+                        val missing = Files.createTempFile("kalin-missing", ".bin").also { Files.delete(it) }
+                        withEngine(transport, { ex -> ex.sendFile(missing, 0, 10) }, nonBlocking = nonBlocking) {
+                            Socket("127.0.0.1", port).use { s ->
+                                s.soTimeout = 5000
+                                s.getOutputStream().write("GET / HTTP/1.1\r\nHost: x\r\n\r\n".toByteArray())
+                                String(s.getInputStream().readAllBytes(), Charsets.ISO_8859_1) shouldStartWith
+                                    "HTTP/1.1 500"
+                            }
+                        }
+                    }
+                }
+
                 test("a malformed pipelined request is answered after the earlier responses") {
                     testKalin(mode = TestMode.REAL, engine = Engine.EVENT_LOOP, transport = transport) {
                         app { routes.get("/") { it.result("root") } }
