@@ -49,15 +49,17 @@ constructor(
 
         /**
          * An engine that compiles templates from [path] on demand and reloads them when they change (development).
-         * Kotlin `.kte` templates additionally need `gg.jte:jte-kotlin` on the classpath.
+         * Kotlin `.kte` templates additionally need `gg.jte:jte-kotlin` on the classpath. Compiled template classes are
+         * written to [classDirectory] (jte's default `jte-classes`, relative to the working directory).
          */
         @JvmStatic
         @JvmOverloads
         public fun directoryTemplateEngine(
             path: String = "src/main/jte",
             contentType: ContentType = ContentType.Html,
+            classDirectory: String = "jte-classes",
         ): TemplateEngine =
-            TemplateEngine.create(DirectoryCodeResolver(Path.of(path)), contentType).also {
+            TemplateEngine.create(DirectoryCodeResolver(Path.of(path)), Path.of(classDirectory), contentType).also {
                 it.setClassPath(compileClassPath())
             }
 

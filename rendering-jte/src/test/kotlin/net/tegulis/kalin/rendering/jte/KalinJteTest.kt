@@ -10,10 +10,13 @@ class KalinJteTest :
     FunSpec({
         val templates = Path.of("src/test/jte")
 
+        // Compile into build/, not the module directory
+        fun engine() = KalinJte.directoryTemplateEngine(templates.toString(), classDirectory = "build/jte-classes")
+
         test("renders .jte templates with hot reload engine, escaping user content") {
             testKalin {
                 app {
-                    fileRenderer(KalinJte(KalinJte.directoryTemplateEngine(templates.toString())))
+                    fileRenderer(KalinJte(engine()))
                     routes.get("/") { ctx ->
                         ctx.render("hello.jte", mapOf("name" to "<Kalin>", "items" to listOf("a", "b")))
                     }
@@ -29,7 +32,7 @@ class KalinJteTest :
         test("renders .kte templates") {
             testKalin {
                 app {
-                    fileRenderer(KalinJte(KalinJte.directoryTemplateEngine(templates.toString())))
+                    fileRenderer(KalinJte(engine()))
                     routes.get("/") { ctx -> ctx.render("greeting.kte", mapOf("name" to "kte")) }
                 }
                 client.get("/").bodyAsText() shouldContain "<p>Kotlin template for kte</p>"
@@ -47,7 +50,7 @@ class KalinJteTest :
         }
 
         test("renders to a string for non-streaming use") {
-            val renderer = KalinJte(KalinJte.directoryTemplateEngine(templates.toString()))
+            val renderer = KalinJte(engine())
             testKalin {
                 app {
                     routes.get("/") { ctx ->
