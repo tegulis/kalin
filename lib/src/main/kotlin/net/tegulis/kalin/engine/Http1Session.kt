@@ -300,6 +300,10 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
         }
     }
 
+    override fun writeFile(path: java.nio.file.Path, channel: FileChannel, position: Long, count: Long) {
+        writeFile(channel, position, count)
+    }
+
     override fun bodyInput(head: RequestHead, exchange: Http1Exchange): BodyInput =
         if (head.chunked) ChunkedBody(exchange) else FixedBody(exchange, head.contentLength)
 

@@ -205,10 +205,13 @@ internal class Http1Exchange(
     }
 
     override fun sendFile(path: java.nio.file.Path, position: Long, count: Long) {
-        writeHead(count)
-        if (!head.isHead && bodyAllowed() && count > 0) {
-            io.writeFile(path, position, count)
-            responseBodyBytes = count
+        // Open first, so a missing or unreadable file fails before the response is committed
+        FileChannel.open(path, java.nio.file.StandardOpenOption.READ).use { channel ->
+            writeHead(count)
+            if (!head.isHead && bodyAllowed() && count > 0) {
+                io.writeFile(path, channel, position, count)
+                responseBodyBytes = count
+            }
         }
         complete()
     }

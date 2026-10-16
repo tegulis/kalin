@@ -107,6 +107,11 @@ internal interface ExchangeIo {
         FileChannel.open(path, java.nio.file.StandardOpenOption.READ).use { writeFile(it, position, count) }
     }
 
+    /** Writes a region of the file at [path], already opened as [channel] before the response head was written. */
+    fun writeFile(path: java.nio.file.Path, channel: FileChannel, position: Long, count: Long) {
+        writeFile(path, position, count)
+    }
+
     /** Scratch buffer used to build response heads; reused per connection. */
     val scratch: ByteBuilder
 

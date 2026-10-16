@@ -2,6 +2,8 @@ package net.tegulis.kalin.engine
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
 import net.tegulis.kalin.testtools.testKalin
 
 class EngineFixesTest :
@@ -16,6 +18,30 @@ class EngineFixesTest :
                     )
                 r.responses.size shouldBe 2
                 r.responses[0].header("Connection") shouldBe null
+                r.responses[1].bodyAsText() shouldBe "root"
+            }
+        }
+
+        test("sendFile of a missing file fails before the response is committed") {
+            testKalin {
+                app {
+                    routes.get("/") { it.result("root") }
+                    routes.get("/missing") { ctx ->
+                        try {
+                            ctx.exchange().sendFile(Path.of("/nonexistent/kalin-missing.txt"), 0, 10)
+                        } catch (_: NoSuchFileException) {
+                            ctx.status(404).result("missing")
+                        }
+                    }
+                }
+                val r =
+                    client.raw(
+                        "GET /missing HTTP/1.1\r\nHost: x\r\n\r\nGET / HTTP/1.1\r\nHost: x\r\n\r\n",
+                        responses = 2,
+                    )
+                r.responses.size shouldBe 2
+                r.responses[0].code shouldBe 404
+                r.responses[0].bodyAsText() shouldBe "missing"
                 r.responses[1].bodyAsText() shouldBe "root"
             }
         }
