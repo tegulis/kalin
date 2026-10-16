@@ -1,4 +1,59 @@
-# Kalin
+# Kalin — design document
+
+> This is the original design document. Section 0 records how it was implemented and the decisions made on the way;
+> the rest is kept as written. User documentation is in the [README](../README.md).
+
+## 0. Implementation status (0.1.0)
+
+**Coordinates and packages.** Group `net.tegulis.kalin`; artifacts `kalin` (core, Gradle module `lib`),
+`kalin-json`, `kalin-testtools`, `kalin-rendering-jte`, `kalin-inject`, `kalin-bundle`. Packages are
+`net.tegulis.kalin.*` instead of `io.kalin.*` used in the examples below. The standalone static file server
+`kalin-server` is the Gradle module `app`.
+
+**Milestones.** M1, M2 and the API part of M3 are implemented: both engines, NIO and native epoll transports, the
+§6.1 API, SSE, JSON, templates, test tools, DI, async/suspend handlers, `NonBlockingHandler`, multipart uploads,
+ranges (`writeSeekableStream`, static files), `writeJsonStream` and `cookieStore()`. Not implemented: the TFB
+Fortunes/database tests (the DB driver is an open decision, §11) and the actual TFB submission; io_uring and the
+other backlog items.
+
+**Decisions taken during implementation**
+
+| Topic | Decision | Reason |
+|---|---|---|
+| LOOM engine model | One virtual thread per connection with blocking channel I/O, instead of an own selector for idle connections | The JDK already parks blocked virtual threads on its own epoll poller; an extra selector adds a register/cancel round trip per request. Idle connections cost one parked virtual thread and a 8 KB buffer. |
+| Timeouts | One hashed timer wheel per engine (LOOM/memory: a timer thread; event loops: advanced by each loop) with lazily re-bucketed deadlines | A deadline change is one volatile write; no queue operations on the hot path. The wheel also keeps a coarse clock for the hot path (clock reads are expensive with some clock sources). |
+| Default engine | `LOOM` | Benchmarks ([docs/benchmarks.md](benchmarks.md)): fastest for ordinary (blocking-allowed) handlers and pipelining; `EVENT_LOOP` wins for non-blocking handlers and is the choice for many idle connections. |
+| Default transport | `AUTO` = EPOLL for `EVENT_LOOP` on Linux when native access is enabled, else NIO | As specified. Without `--enable-native-access` Kalin falls back to NIO and logs one warning. |
+| Epoll accept | One listening socket with round-robin hand-off by default; `config.server.reusePort = true` gives every loop its own `SO_REUSEPORT` socket | Round-robin balances better with few connections per loop. |
+| EVENT_LOOP handlers on virtual threads | The handler thread writes the response directly to the socket and hands completion back without waking the loop when no input is waiting | Removes two thread hops per request (920k vs 709k req/s). |
+| Request bodies in EVENT_LOOP | Streamed to virtual-thread handlers through a bounded pipe (reading pauses when it is full); fully buffered (≤ 1 MB) for inline handlers | Backpressure for uploads, no blocking on the loop. |
+| `HEAD` | Runs the `GET` handler and sends its headers without the body | RFC 9110 asks for the same headers as `GET`; Javalin answers `200` without running the handler. |
+| Suspend handlers | `suspendHandler { ctx -> }` returns a `Handler` | `get(path) suspend { }` is not valid Kotlin; overloads of `get` for suspend lambdas would be ambiguous. |
+| JSON | `JsonMapper` takes `KType` (from `typeOf<T>()`) besides `java.lang.reflect.Type`; `Context` is an abstract class so `json(value)`, `bodyAsClass<T>()` are reified members | Generic types such as `List<User>` work with kotlinx.serialization without reflection, and Javalin-style calls compile without extra imports. |
+| Test tools REAL mode | JDK `HttpClient`, falling back to raw sockets for headers it refuses (`Host`, `Connection`, ...) and malformed URIs | |
+| jte `.kte` hot reload | Needs `gg.jte:jte-kotlin` and a `kotlin-compiler-embeddable` matching the project's Kotlin version | jte-kotlin 3.2.4 bundles Kotlin 2.2, which cannot read Kotlin 2.4 stdlib metadata. |
+| kotlin-inject spike (M0) | kotlin-inject 0.9.0 with KSP 2.3.12 works with Kotlin 2.4.20 and context parameters in the same module | Metro was not needed. |
+| Formatting and lint | ktfmt (kotlinlang style) from the project template; no ktlint/detekt | |
+
+**Targets (§2)**
+
+| Target | Result |
+|---|---|
+| Plaintext and JSON faster than netty, jetty, javalin | Met on local runs: 8.2M / 1.25M req/s vs Netty 2.2M / 1.04M (see benchmarks) |
+| p99 not worse than Netty | Met for JSON (0.63 ms vs 0.83 ms) |
+| Startup < 100 ms | LOOM ~55 ms, EVENT_LOOP/NIO ~70 ms; EVENT_LOOP/EPOLL ~110 ms because of FFM stub generation (started in the background by `Kalin.create`) |
+| Idle heap < 15 MB with one route | 5.5–7.3 MB |
+| Handlers on virtual threads by default | Yes |
+| `kalin-core` jar < 400 KB | Not met: ~670 KB. Most of it is Kotlin metadata and bytecode of the full §6.1 API (61 response exception classes alone are ~110 KB uncompressed). |
+| Other jars < 50 KB | `kalin-json` 20 KB, `kalin-rendering-jte` 8 KB, `kalin-inject` 6 KB; `kalin-testtools` ~70 KB (not met) |
+
+**Testing.** ~170 tests: parser/codec unit tests with a 200k-input fuzz loop, protocol tests (pipelining, smuggling,
+`100-continue`, timeouts/slowloris, header injection), the ported Javalin behaviors (routing, lifecycle, context,
+exceptions, validation, static files, SSE, async, plugins), an engine/transport/execution matrix, a concurrent
+stress test, and module tests. `./gradlew test -Pkalin.testMode=REAL -Pkalin.engine=... -Pkalin.transport=...`
+reruns the core suite over real sockets for each engine and transport (also in CI).
+
+---
 
 A tiny, 100% Kotlin web framework with a Javalin-compatible API and its own HTTP/1.1 server.
 No Jetty, no Netty, no Servlet API. Faster than Javalin, Jetty and Netty on TechEmpower.
