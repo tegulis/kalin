@@ -43,7 +43,8 @@ internal abstract class BlockingIo {
 
 /**
  * Processes the requests of one connection with blocking I/O on the current (virtual) thread: parse, dispatch, write,
- * drain, repeat. Pipelined requests are processed in order and their responses are flushed together.
+ * drain, repeat. Pipelined requests are processed in order and their responses are flushed together; buffered responses
+ * are always flushed before a read that may block.
  */
 internal class Http1Session(private val io: BlockingIo, private val runtime: ServerRuntime) :
     Runnable, ExchangeIo, ManagedConnection {
@@ -115,7 +116,6 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                     lingeringClose(head.hasBody)
                     return
                 }
-                if (inPos == inLimit) flushOut() // nothing pipelined: send now; else batch with the next responses
             } finally {
                 if (active) runtime.activeExchanges.decrementAndGet()
             }
@@ -194,6 +194,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                         timeout.clear()
                         return head
                     }
+                    flush() // the next head is incomplete: send the responses batched so far before blocking
                     if (!headDeadlineSet) {
                         idle = false
                         headDeadlineSet = true
@@ -202,6 +203,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                 }
             }
             if (inPos == inLimit) {
+                flush()
                 inPos = 0
                 inLimit = 0
                 parser.reset()
@@ -361,6 +363,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                 System.arraycopy(inBuf, inPos, b, off, n)
                 inPos += n
             } else {
+                flush()
                 timeout.after(runtime.requestTimeoutMs)
                 try {
                     n = io.read(b, off, want)
@@ -418,6 +421,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
         private fun decodeInto(len: Int) {
             while (produced == 0 && !decoder.done) {
                 if (inPos == inLimit) {
+                    flush()
                     inPos = 0
                     inLimit = 0
                     timeout.after(runtime.requestTimeoutMs)
