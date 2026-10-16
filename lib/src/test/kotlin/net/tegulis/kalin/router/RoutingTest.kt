@@ -12,6 +12,7 @@ import net.tegulis.kalin.http.EndpointNotFound
 import net.tegulis.kalin.http.HandlerType
 import net.tegulis.kalin.http.HttpStatus
 import net.tegulis.kalin.http.NotFoundResponse
+import net.tegulis.kalin.http.UnauthorizedResponse
 import net.tegulis.kalin.testtools.testKalin
 
 class RoutingTest :
@@ -150,6 +151,21 @@ class RoutingTest :
                 client.get("/%+").let {
                     it.code shouldBe 400
                     it.bodyAsText() shouldContain "Bad Request"
+                }
+            }
+        }
+
+        test("wildcards and path params match line separator characters") {
+            testKalin {
+                app {
+                    routes.before { if (it.header("Authorization") == null) throw UnauthorizedResponse() }
+                    routes.get("/users/{id}") { it.result("user " + it.pathParam("id")) }
+                    routes.get("/files/<path>") { it.result("file " + it.pathParam("path")) }
+                }
+                for (c in listOf('\u0085', '\u2028', '\u2029')) {
+                    client.get("/users/1$c").code shouldBe 401
+                    client.get("/users/1$c") { header("Authorization", "x") }.bodyAsText() shouldBe "user 1$c"
+                    client.get("/files/a$c/b") { header("Authorization", "x") }.bodyAsText() shouldBe "file a$c/b"
                 }
             }
         }

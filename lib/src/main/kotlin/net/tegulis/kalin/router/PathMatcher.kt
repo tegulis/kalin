@@ -108,7 +108,11 @@ internal class PathMatcher(val rawPath: String, private val config: RouterConfig
                 }
             }
         val prefix = if (config.treatMultipleSlashesAsSingleSlash) "^/+" else "^/"
-        val options = if (config.caseInsensitiveRoutes) setOf(RegexOption.IGNORE_CASE) else emptySet()
+        // DOT_MATCHES_ALL: without it `.` skips line terminators such as U+2028, so a path containing one would slip
+        // past `*` filters (authentication in `before`) while still matching `{param}` endpoints
+        val options =
+            if (config.caseInsensitiveRoutes) setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+            else setOf(RegexOption.DOT_MATCHES_ALL)
         return Regex("$prefix$body$suffix$", options)
     }
 
