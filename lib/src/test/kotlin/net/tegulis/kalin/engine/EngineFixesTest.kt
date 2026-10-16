@@ -69,7 +69,8 @@ class EngineFixesTest :
         }
 
         test("a malformed pipelined request does not discard earlier responses") {
-            testKalin {
+            // The blocking session; the event loop answers protocol errors on its own path
+            testKalin(engine = Engine.LOOM, transport = Transport.NIO) {
                 app { routes.get("/") { it.result("root") } }
                 val r = client.raw("GET / HTTP/1.1\r\nHost: x\r\n\r\n".repeat(2) + "BAD\r\n\r\n", responses = 3)
                 r.responses.map { it.code } shouldBe listOf(200, 200, 400)
