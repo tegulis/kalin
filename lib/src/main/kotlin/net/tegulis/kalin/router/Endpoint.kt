@@ -80,12 +80,11 @@ public class Endpoints internal constructor() {
     internal var lastMatchedEndpoint: Endpoint? = null
     internal var lastPathParams: Map<String, String> = emptyMap()
 
+    /** Each handler sees only the path params of its own path (an empty map for static paths). */
     internal fun add(endpoint: Endpoint, pathParams: Map<String, String>) {
         stack.add(endpoint)
-        if (pathParams.isNotEmpty()) {
-            lastMatchedEndpoint = endpoint
-            lastPathParams = pathParams
-        }
+        lastMatchedEndpoint = endpoint
+        lastPathParams = pathParams
     }
 
     internal companion object {
