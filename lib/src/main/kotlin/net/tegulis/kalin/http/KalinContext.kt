@@ -542,6 +542,8 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
                     }
                 } catch (_: IOException) {}
             }
+            // Uploaded files spilled to disk live until the response is out
+            cachedMultipart?.cleanup()
         }
     }
 

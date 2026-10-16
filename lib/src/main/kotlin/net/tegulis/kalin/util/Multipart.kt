@@ -81,6 +81,7 @@ internal object Multipart {
         val fields = LinkedHashMap<String, MutableList<String>>()
         val files = LinkedHashMap<String, MutableList<UploadedFile>>()
         val temp = ArrayList<Path>()
+        var sink: SpillingSink? = null
         try {
             // Preamble: the first delimiter has no leading CRLF
             reader.skipPreamble()
@@ -104,15 +105,19 @@ internal object Multipart {
                     val charset = partType?.let { charsetOf(it) } ?: Charsets.UTF_8
                     fields.getOrPut(name) { ArrayList(1) }.add(bos.toString(charset))
                 } else {
-                    val sink = SpillingSink(config, temp)
-                    reader.readPart(sink, config.maxFileSize)
-                    sink.close()
-                    val part = Part(name, fileName, partType, headers, sink.bytes(), sink.file, sink.size)
+                    val s = SpillingSink(config, temp).also { sink = it }
+                    reader.readPart(s, config.maxFileSize)
+                    s.close()
+                    sink = null
+                    val part = Part(name, fileName, partType, headers, s.bytes(), s.file, s.size)
                     files.getOrPut(name) { ArrayList(1) }.add(part)
                 }
             }
         } catch (e: Exception) {
-            for (p in temp) Files.deleteIfExists(p)
+            try {
+                sink?.close()
+            } catch (_: IOException) {}
+            Parsed(fields, files, temp).cleanup()
             throw e
         }
         return Parsed(fields, files, temp)
