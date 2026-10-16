@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 First release.
 
+Requires JDK 25 or later, and Kotlin 2.4 or later in Kotlin projects.
+
 ### Added
 
 - `kalin`: Javalin 7 style API (`Kalin.create`, `config.routes`, handlers and filters, `Context`, validation,
