@@ -184,25 +184,29 @@ internal class EpollSocket(
     private val loop: EpollEventLoop,
     override val remoteAddress: InetSocketAddress?,
 ) : LoopSocket {
+    /** Loop thread scratch (reads, control operations). */
     private val s = loop.scratch
+
+    /** Scratch for writes, which handler threads may also perform (serialized by the output queue lock). */
+    private val ws = Native.Scratch(Arena.ofAuto())
     private var open = true
     override val edgeTriggered: Boolean = true
     override val localAddress: InetSocketAddress? by lazy { if (open) Native.localAddress(s, fd) else null }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int = Native.read(s, fd, b, off, len)
 
-    override fun write(b: ByteArray, off: Int, len: Int): Int = Native.write(s, fd, b, off, len)
+    override fun write(b: ByteArray, off: Int, len: Int): Int = Native.write(ws, fd, b, off, len)
 
     override fun openFile(path: Path): AutoCloseable {
-        val fileFd = Arena.ofConfined().use { a -> Native.openRead(s, a, path.toAbsolutePath().toString()) }
-        return AutoCloseable { Native.close(s, fileFd) }.also { handles[it] = fileFd }
+        val fileFd = Arena.ofConfined().use { a -> Native.openRead(ws, a, path.toAbsolutePath().toString()) }
+        return AutoCloseable { Native.close(ws, fileFd) }.also { handles[it] = fileFd }
     }
 
-    private val handles = HashMap<AutoCloseable, Int>()
+    private val handles = java.util.concurrent.ConcurrentHashMap<AutoCloseable, Int>()
 
     override fun sendFile(file: AutoCloseable, position: Long, count: Long): Long {
         val inFd = handles[file] ?: throw java.io.IOException("Unknown file handle")
-        val n = Native.sendfile(s, fd, inFd, position, minOf(count, 1L shl 30))
+        val n = Native.sendfile(ws, fd, inFd, position, minOf(count, 1L shl 30))
         return n
     }
 

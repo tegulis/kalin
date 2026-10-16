@@ -251,7 +251,7 @@ class LifecycleTest :
                 val deadline = System.currentTimeMillis() + 5000
                 while (logged.size < 2 && System.currentTimeMillis() < deadline) Thread.sleep(5)
             }
-            logged shouldBe listOf("GET /x 200 true", "GET /missing 404 true")
+            logged.sorted() shouldBe listOf("GET /missing 404 true", "GET /x 200 true")
         }
 
         test("lifecycle events fire in order") {

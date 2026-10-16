@@ -61,13 +61,26 @@ internal class LoopConnection(
     // Request body handling
     private var bodyRemaining = 0L
     private var chunked: ChunkedDecoder? = null
-    private var pipe: PipeBody? = null
+    @Volatile private var pipe: PipeBody? = null
     private var inlineBody: java.io.ByteArrayOutputStream? = null
     private var drainedBytes = 0L
 
     @Volatile
     override var closed: Boolean = false
         private set
+
+    /** An exchange completed off the loop, waiting for the loop to move on (see [exchangeCompleted]). */
+    private val pendingCompletion = java.util.concurrent.atomic.AtomicReference<Http1Exchange?>()
+
+    /** Set by the loop when input is buffered while an exchange is still running on another thread. */
+    @Volatile private var inputWaiting = false
+
+    /** The exchange counted in `runtime.activeExchanges`, uncounted exactly once. */
+    private val counted = java.util.concurrent.atomic.AtomicReference<Http1Exchange?>()
+
+    private fun uncount(exchange: Http1Exchange) {
+        if (counted.compareAndSet(exchange, null)) runtime.activeExchanges.decrementAndGet()
+    }
 
     @Volatile
     override var idle: Boolean = true
@@ -168,7 +181,13 @@ internal class LoopConnection(
                 READ_HEAD -> if (!readHead()) return
                 READ_INLINE_BODY -> if (!readInlineBody()) return
                 HANDLING -> {
+                    if (takeCompletion()) continue
                     if (pipe != null) feedPipe()
+                    if (inPos < inLimit) {
+                        // Tell a finishing handler thread to wake us; then re-check (Dekker-style handshake)
+                        inputWaiting = true
+                        if (takeCompletion()) continue
+                    }
                     return
                 }
                 DRAIN_BODY -> if (!drainBody()) return
@@ -217,6 +236,7 @@ internal class LoopConnection(
         head = h
         val exchange = Http1Exchange(h, this, runtime.serverHeader)
         current = exchange
+        counted.set(exchange)
         runtime.activeExchanges.incrementAndGet()
         runtime.totalRequests.incrementAndGet()
         bodyRemaining = if (h.chunked) -1 else maxOf(0, h.contentLength)
@@ -356,15 +376,49 @@ internal class LoopConnection(
     // ---- exchange completion -----------------------------------------------------------------------------
 
     override fun exchangeCompleted(exchange: Http1Exchange) {
-        if (loop.inLoop) onExchangeComplete(exchange) else loop.execute { onExchangeComplete(exchange) }
+        uncount(exchange)
+        if (loop.inLoop) {
+            onExchangeComplete(exchange)
+            return
+        }
+        // Completed on a handler thread. Simple exchanges write their response directly and hand the connection
+        // back without waking the loop; the loop picks the completion up with the next input.
+        val simple = !exchange.watching && !exchange.closeAfter && pipe == null && !runtime.stopping
+        if (!simple) {
+            loop.execute { onExchangeComplete(exchange) }
+            return
+        }
+        val flushed = directFlush()
+        pendingCompletion.set(exchange)
+        if (!flushed) {
+            loop.execute { takeCompletion() }
+            return
+        }
+        timeout.after(runtime.idleTimeoutMs)
+        if (inputWaiting || closed) loop.execute { takeCompletion() }
+    }
+
+    /** Applies a completion recorded by a handler thread (loop thread). */
+    private fun takeCompletion(): Boolean {
+        val exchange = pendingCompletion.getAndSet(null) ?: return false
+        inputWaiting = false
+        onExchangeComplete(exchange)
+        return true
+    }
+
+    /** Writes pending output from the calling (handler) thread. Returns true if everything was written. */
+    private fun directFlush(): Boolean {
+        if (closed) return true
+        return try {
+            out.flushTo(socket) { timeout.after(runtime.writeTimeoutMs) }
+        } catch (_: IOException) {
+            loop.execute { closeNow() }
+            true
+        }
     }
 
     private fun onExchangeComplete(exchange: Http1Exchange) {
-        if (current !== exchange || closed) {
-            if (current === exchange) runtime.activeExchanges.decrementAndGet()
-            return
-        }
-        runtime.activeExchanges.decrementAndGet()
+        if (current !== exchange || closed) return
         inlineBytes = null
         val h = head!!
         if (exchange.watching || exchange.closeAfter || runtime.stopping) {
@@ -419,6 +473,10 @@ internal class LoopConnection(
 
     private fun flushOutput() {
         if (closed) return
+        if (state == HANDLING && pendingCompletion.get() != null) {
+            takeCompletion()
+            return
+        }
         val done =
             try {
                 out.flushTo(socket) { timeout.after(runtime.writeTimeoutMs) }
@@ -473,12 +531,11 @@ internal class LoopConnection(
         closed = true
         idle = false
         timeout.cancel()
-        socket.close()
-        out.close()
+        out.close { socket.close() }
         pipe?.fail(IOException("Connection closed"))
         current?.let {
             it.disconnected()
-            if (!it.isCompleted) runtime.activeExchanges.decrementAndGet()
+            uncount(it)
         }
         runtime.connections.remove(this)
         runtime.closed()
@@ -493,8 +550,8 @@ internal class LoopConnection(
     override fun write(b: ByteArray, off: Int, len: Int) {
         if (closed) throw IOException("Connection closed")
         out.append(b, off, len)
-        if (!loop.inLoop) {
-            if (out.pending > HIGH_WATERMARK) {
+        if (!loop.inLoop && out.pending > HIGH_WATERMARK) {
+            if (!directFlush()) {
                 requestFlush()
                 out.awaitBelow(HIGH_WATERMARK, LOW_WATERMARK, runtime.writeTimeoutMs)
             }
@@ -502,7 +559,7 @@ internal class LoopConnection(
     }
 
     override fun flush() {
-        if (loop.inLoop) flushOutput() else requestFlush()
+        if (loop.inLoop) flushOutput() else if (!directFlush()) requestFlush()
     }
 
     private fun requestFlush() {

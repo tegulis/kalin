@@ -95,6 +95,7 @@ internal class OutputQueue(private val chunkSize: Int) {
      */
     fun flushTo(socket: LoopSocket, onProgress: () -> Unit): Boolean {
         lock.withLock {
+            if (closed) return true
             var progressed = false
             try {
                 while (true) {
@@ -150,10 +151,14 @@ internal class OutputQueue(private val chunkSize: Int) {
         seg.done.countDown()
     }
 
-    /** Drops everything and wakes blocked producers (connection closed). */
-    fun close() {
+    /**
+     * Drops everything and wakes blocked producers (connection closed). [closeSocket] runs under the lock, so no other
+     * thread can be writing to the socket (whose descriptor may be reused once closed).
+     */
+    fun close(closeSocket: () -> Unit = {}) {
         lock.withLock {
             closed = true
+            closeSocket()
             for (seg in segs) if (seg is FileSeg) closeFile(seg)
             segs.clear()
             pending = 0
