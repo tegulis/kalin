@@ -113,7 +113,7 @@ constructor(public val gzip: Gzip? = null, public val deflate: Deflate? = null) 
                         def.setLevel(gzip?.level ?: 6)
                     }
                 }
-            CompressionType.DEFLATE -> DeflaterOutputStream(out, Deflater(deflate?.level ?: 6), 8192, syncFlush)
+            CompressionType.DEFLATE -> EndingDeflaterOutputStream(out, deflate?.level ?: 6, syncFlush)
         }
 
     /** Compresses a complete body. */
@@ -132,5 +132,20 @@ constructor(public val gzip: Gzip? = null, public val deflate: Deflate? = null) 
 
         /** Gzip and Deflate at level 6. */
         @JvmField public val GZIP_AND_DEFLATE: CompressionStrategy = CompressionStrategy(Gzip(), Deflate())
+    }
+}
+
+/** A [DeflaterOutputStream] that frees its own [Deflater]'s native memory on close, even when closing fails. */
+internal class EndingDeflaterOutputStream(out: OutputStream, level: Int, syncFlush: Boolean) :
+    DeflaterOutputStream(out, Deflater(level), 8192, syncFlush) {
+    internal val deflater: Deflater
+        get() = def
+
+    override fun close() {
+        try {
+            super.close()
+        } finally {
+            def.end()
+        }
     }
 }
