@@ -57,6 +57,11 @@ class StaticFilesTest :
                     it.code shouldBe 301
                     it.header("Location") shouldBe "/dir/"
                 }
+                // A leading "//" would make the Location a link to the host "dir"
+                client.get("//dir?x=1").let {
+                    it.code shouldBe 301
+                    it.header("Location") shouldBe "/dir/?x=1"
+                }
                 client.get("/noindex/").code shouldBe 404
                 client.get("/missing.txt").code shouldBe 404
                 client.head("/hello.txt").let {

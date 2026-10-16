@@ -155,7 +155,9 @@ internal class StaticLocation(val config: StaticFileConfig) {
         if (attrs.isDirectory) {
             if (!rel.endsWith("/") && rel.isNotEmpty()) {
                 val q = ctx.queryString()?.let { "?$it" } ?: ""
-                return Resource.DirectoryRedirect((ctx as KalinContext).path() + "/" + q)
+                // One leading slash only: "//host/" in Location is a link to another host
+                val path = "/" + (ctx as KalinContext).path().trimStart('/')
+                return Resource.DirectoryRedirect("$path/$q")
             }
             for (welcome in config.welcomeFiles) {
                 val w = file.resolve(welcome)
