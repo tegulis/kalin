@@ -111,7 +111,7 @@ internal class Http1Exchange(
         check(!isCommitted) { "Response already committed" }
         isCommitted = true
         // An unread body we cannot cheaply skip: tell the client we close (decided by the connection later as well)
-        if (continueSkipped) closeAfter = true
+        if (continueSkipped || io.shuttingDown) closeAfter = true
         val connectionHeader = responseHeaders[Header.CONNECTION]
         if (connectionHeader != null && connectionHeader.contains("close", ignoreCase = true)) closeAfter = true
         val sb = io.scratch

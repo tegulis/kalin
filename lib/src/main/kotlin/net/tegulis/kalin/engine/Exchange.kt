@@ -127,6 +127,10 @@ internal interface ExchangeIo {
     /** True if the transport is known to be closed. */
     val closed: Boolean
 
+    /** True while the server shuts down: responses then announce `Connection: close`. */
+    val shuttingDown: Boolean
+        get() = false
+
     /** Called once when the exchange completes its response. */
     fun exchangeCompleted(exchange: Http1Exchange)
 }

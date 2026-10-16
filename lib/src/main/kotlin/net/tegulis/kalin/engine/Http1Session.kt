@@ -114,7 +114,8 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                     flushOut()
                     runtime.activeExchanges.decrementAndGet()
                     active = false
-                    lingeringClose(head.hasBody)
+                    // Unread input (a body, pipelined requests) would make the close reset the connection
+                    lingeringClose(head.hasBody || inPos < inLimit || head.keepAlive)
                     return
                 }
             } finally {
@@ -204,6 +205,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
             if (inPos < inLimit) {
                 inPos += parser.skipLeadingEmptyLines(inBuf, inPos, inLimit)
                 if (inPos < inLimit) {
+                    idle = false
                     val headEnd = parser.findHeadEnd(inBuf, inPos, inLimit)
                     if (headEnd >= 0) {
                         val head = parser.parse(inBuf, inPos, headEnd)
@@ -213,7 +215,6 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                     }
                     flush() // the next head is incomplete: send the responses batched so far before blocking
                     if (!headDeadlineSet) {
-                        idle = false
                         headDeadlineSet = true
                         timeout.after(runtime.requestTimeoutMs)
                     }
@@ -360,6 +361,9 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
 
     override val closed: Boolean
         get() = io.isClosed
+
+    override val shuttingDown: Boolean
+        get() = runtime.stopping
 
     override fun exchangeCompleted(exchange: Http1Exchange) {
         completed?.countDown()
