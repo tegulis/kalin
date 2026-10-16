@@ -194,7 +194,7 @@ subprojects {
     val checkDependencies =
         tasks.register("checkDependencies") {
             group = "verification"
-            description = "Verifies the runtime dependencies against dependency-allowlist.txt (README section 5.4)"
+            description = "Verifies the runtime dependencies against dependency-allowlist.txt (docs/DESIGN.md §5.4)"
             val root = configurations.named("runtimeClasspath").flatMap { it.incoming.resolutionResult.rootComponent }
             val moduleName = project.name
             doLast {

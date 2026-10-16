@@ -1,4 +1,4 @@
-# Runtime dependencies allowed per published module (README section 5.4).
+# Runtime dependencies allowed per published module (docs/DESIGN.md §5.4).
 # Format: <module>: <group>:<artifact>   ("*" artifact allows the whole group)
 # kalin-core must depend on the Kotlin standard library only.
 lib: org.jetbrains.kotlin:kotlin-stdlib
