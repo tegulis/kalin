@@ -709,6 +709,9 @@ internal class LoopConnection(
     override val localAddress: InetSocketAddress?
         get() = socket.localAddress
 
+    override val shuttingDown: Boolean
+        get() = runtime.stopping
+
     // ---- body streams ------------------------------------------------------------------------------------
 
     private class ByteArrayBody(private val bytes: ByteArray) : BodyInput() {

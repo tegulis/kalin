@@ -11,6 +11,8 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
@@ -166,6 +168,29 @@ class EventLoopFixesTest :
                                 )
                             // The client may wait for this response before sending the rest
                             readResponseBody(s.getInputStream().buffered()) shouldBe "ping"
+                        }
+                    }
+                }
+
+                test("responses written while the server stops announce Connection: close") {
+                    val started = CountDownLatch(1)
+                    withEngine(
+                        transport,
+                        { ex ->
+                            started.countDown()
+                            Thread.sleep(800)
+                            ex.send("ok".toByteArray())
+                        },
+                    ) {
+                        Socket("127.0.0.1", port).use { s ->
+                            s.soTimeout = 5000
+                            s.getOutputStream().write("GET / HTTP/1.1\r\nHost: x\r\n\r\n".toByteArray())
+                            started.await(5, TimeUnit.SECONDS) shouldBe true
+                            val stopper = Thread.ofPlatform().start { stop() }
+                            val response = String(s.getInputStream().readAllBytes(), Charsets.ISO_8859_1)
+                            response shouldStartWith "HTTP/1.1 200"
+                            response shouldContain "Connection: close\r\n"
+                            stopper.join(5000)
                         }
                     }
                 }
