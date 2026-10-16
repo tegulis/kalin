@@ -94,9 +94,11 @@ internal class RealClientTransport(private val port: Int) : ClientTransport {
 
     override fun execute(method: String, path: String, request: TestRequest, mapper: () -> JsonMapper): TestResponse {
         val restricted = request.headers.any { it.first.lowercase() in RESTRICTED }
-        if (restricted) return executeRaw(this, method, path, request, mapper)
+        val uri = runCatching { URI.create(origin + request.target(path)) }.getOrNull()
+        // The JDK client refuses some headers and malformed URIs; send those requests over a raw socket
+        if (restricted || uri == null) return executeRaw(this, method, path, request, mapper)
         val builder =
-            HttpRequest.newBuilder(URI.create(origin + request.target(path)))
+            HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofMillis(request.timeout.inWholeMilliseconds))
                 .method(
                     method,
