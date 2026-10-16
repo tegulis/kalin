@@ -9,8 +9,10 @@ import net.tegulis.kalin.testtools.testKalin
 
 class ForwardedHeadersTest :
     FunSpec({
+        // The server's own host differs per test mode (localhost in memory, 127.0.0.1:port over sockets)
         val show: (Context) -> Unit = { ctx ->
-            ctx.result("${ctx.ip()}|${ctx.scheme()}|${ctx.host()}|${ctx.forwardedFor()}")
+            val host = ctx.host()?.substringBefore(':')?.let { if (it == "127.0.0.1") "localhost" else it }
+            ctx.result("${ctx.ip()}|${ctx.scheme()}|$host|${ctx.forwardedFor()}")
         }
 
         test("rightmost untrusted entry is the client by default") {
