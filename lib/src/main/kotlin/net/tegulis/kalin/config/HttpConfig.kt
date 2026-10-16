@@ -33,6 +33,17 @@ public class HttpConfig {
      */
     @JvmField public var methodOverride: Boolean = true
 
+    /**
+     * Let the default `HttpResponseException` answer be `text/html` when the client accepts HTML and the exception
+     * message contains an HTML tag, for example `throw ForbiddenResponse("<b>No access</b>")`. By default (false) such
+     * clients get `text/plain`; JSON clients get JSON either way.
+     *
+     * **Warning:** the message and details are sent unescaped. Never interpolate request data (paths, parameters,
+     * headers, bodies) into exception messages when this is enabled, or you open a reflected XSS hole. Kalin's own
+     * "Endpoint ... not found" message contains the request path and is therefore always sent as plain text.
+     */
+    @JvmField public var htmlErrorMessages: Boolean = false
+
     /** Response compression. Gzip and Deflate are supported. */
     @JvmField public var compressionStrategy: CompressionStrategy = CompressionStrategy.GZIP
 

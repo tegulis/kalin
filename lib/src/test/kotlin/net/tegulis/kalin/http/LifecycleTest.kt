@@ -192,7 +192,7 @@ class LifecycleTest :
                         it.bodyAsText() shouldContain "\"status\": 403"
                     }
                 client.get("/").bodyAsText() shouldBe "Off \"limits\"!"
-                client.get("/") { header("Accept", "text/html") }.contentType()!!.mimeType shouldBe "text/html"
+                client.get("/") { header("Accept", "text/html") }.contentType()!!.mimeType shouldBe "text/plain"
                 client.get("/details").bodyAsText() shouldBe "Bad\n\nfield:\nvalue\n"
                 client.get("/details") { header("Accept", "application/json") }.bodyAsText() shouldContain
                     "\"details\": {\"field\":\"value\"}"

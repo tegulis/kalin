@@ -2,14 +2,20 @@ package net.tegulis.kalin.router
 
 import net.tegulis.kalin.http.ContentType
 import net.tegulis.kalin.http.Context
+import net.tegulis.kalin.http.EndpointNotFound
 import net.tegulis.kalin.http.Header
 import net.tegulis.kalin.http.HttpResponseException
+import net.tegulis.kalin.http.KalinContext
 import net.tegulis.kalin.http.MethodNotAllowedResponse
 import net.tegulis.kalin.json.SimpleJson
 
-/** Default answer for [HttpResponseException]s: JSON if the client accepts it, else plain text (HTML if accepted). */
+/**
+ * Default answer for [HttpResponseException]s: JSON if the client accepts it, else plain text. HTML is only sent when
+ * `http.htmlErrorMessages` is enabled (see its warning).
+ */
 public object HttpResponseExceptionMapper {
     private const val DOCS_URL = "https://github.com/tegulis/kalin#"
+    private val HTML_TAG = Regex("<[a-zA-Z/!][^>]*>")
 
     /** Writes the default response for [e]. */
     @JvmStatic
@@ -18,11 +24,18 @@ public object HttpResponseExceptionMapper {
         val responseType = ctx.responseHeader(Header.CONTENT_TYPE)
         fun accepts(type: String) = accept?.contains(type) == true || responseType == type
         when {
-            accepts(ContentType.HTML) -> answer(ctx, e, plainResult(e)).contentType(ContentType.HTML)
+            accepts(ContentType.HTML) ->
+                answer(ctx, e, plainResult(e))
+                    .contentType(if (sendsHtml(e, ctx)) ContentType.HTML else ContentType.PLAIN)
             accepts(ContentType.JSON) -> answer(ctx, e, jsonResult(e)).contentType(ContentType.JSON)
             else -> answer(ctx, e, plainResult(e)).contentType(ContentType.PLAIN)
         }
     }
+
+    private fun sendsHtml(e: HttpResponseException, ctx: Context): Boolean =
+        (ctx as? KalinContext)?.state?.config?.http?.htmlErrorMessages == true &&
+            e !is EndpointNotFound &&
+            e.message?.let { HTML_TAG.containsMatchIn(it) } == true
 
     private fun answer(ctx: Context, e: HttpResponseException, body: String): Context {
         ctx.status(e.status).result(body)
