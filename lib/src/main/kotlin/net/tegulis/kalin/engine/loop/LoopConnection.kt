@@ -69,6 +69,9 @@ internal class LoopConnection(
     private var inlineBody: java.io.ByteArrayOutputStream? = null
     private var drainedBytes = 0L
 
+    /** The whole unread body must be discarded by this time (timer clock), however slowly it trickles in. */
+    private var drainDeadline = 0L
+
     @Volatile
     override var closed: Boolean = false
         private set
@@ -419,7 +422,7 @@ internal class LoopConnection(
             return false
         }
         if (!done) {
-            timeout.after(runtime.requestTimeoutMs)
+            if (out.isEmpty) timeout.deadline = drainDeadline
             return false
         }
         nextRequest()
@@ -505,6 +508,8 @@ internal class LoopConnection(
             pipe = null
             drainedBytes = 0
             state = DRAIN_BODY
+            timeout.after(runtime.requestTimeoutMs)
+            drainDeadline = timeout.deadline
             if (!dispatching && processBuffered()) flushOutput()
             return
         }
@@ -555,6 +560,7 @@ internal class LoopConnection(
             }
             if (state == READ_HEAD && inPos == inLimit) armIdleTimeout()
             else if (state == HANDLING && pipe?.finishedFeeding != false) timeout.clear()
+            else if (state == DRAIN_BODY) timeout.deadline = drainDeadline
         } else {
             if (!writeInterest) {
                 writeInterest = true

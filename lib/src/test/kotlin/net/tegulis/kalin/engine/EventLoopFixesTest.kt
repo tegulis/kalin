@@ -210,6 +210,22 @@ class EventLoopFixesTest :
                     }
                 }
 
+                test("an unread request body trickling in is drained within one request timeout") {
+                    withEngine(
+                        transport,
+                        { ex -> ex.send("ok".toByteArray()) },
+                        configure = { requestTimeout = 500.milliseconds },
+                    ) {
+                        Socket("127.0.0.1", port).use { s ->
+                            s.soTimeout = 3000
+                            s.getOutputStream()
+                                .write("POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\nxx".toByteArray())
+                            readResponseBody(s.getInputStream().buffered()) shouldBe "ok"
+                            dripUntilClosed(s, "x".toByteArray(), 2500) shouldBe true
+                        }
+                    }
+                }
+
                 test("a malformed pipelined request is answered after the earlier responses") {
                     testKalin(mode = TestMode.REAL, engine = Engine.EVENT_LOOP, transport = transport) {
                         app { routes.get("/") { it.result("root") } }
