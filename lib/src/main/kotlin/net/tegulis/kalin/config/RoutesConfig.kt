@@ -1,7 +1,7 @@
 package net.tegulis.kalin.config
 
 import java.util.function.Consumer
-import net.tegulis.kalin.apibuilder.ApiBuilder
+import net.tegulis.kalin.apibuilder.ApiBuilderState
 import net.tegulis.kalin.apibuilder.EndpointGroup
 import net.tegulis.kalin.http.ExceptionHandler
 import net.tegulis.kalin.http.Handler
@@ -32,7 +32,7 @@ public class RoutesConfig internal constructor(private val config: KalinConfig) 
     /** Adds an endpoint. */
     public fun addEndpoint(endpoint: Endpoint): RoutesConfig = apply {
         checkOpen()
-        val scoped = ApiBuilder.scope(this, endpoint)
+        val scoped = ApiBuilderState.scope(this, endpoint)
         val path = normalize(scoped.path)
         net.tegulis.kalin.router.PathMatcher(path, config.router) // validates the pattern early
         endpoints.add(Endpoint(scoped.method, path, scoped.handler, scoped.metadata().toSet()))
@@ -176,6 +176,6 @@ public class RoutesConfig internal constructor(private val config: KalinConfig) 
 
     /** Adds endpoints with the static [ApiBuilder] functions (`path`, `get`, `crud`, ...). */
     public fun apiBuilder(endpoints: EndpointGroup): RoutesConfig = apply {
-        ApiBuilder.withRoutes(this) { endpoints.addEndpoints() }
+        ApiBuilderState.withRoutes(this) { endpoints.addEndpoints() }
     }
 }
