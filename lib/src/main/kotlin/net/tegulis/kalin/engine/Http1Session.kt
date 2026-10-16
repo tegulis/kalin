@@ -283,10 +283,17 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
         timedWrite(outBuf, 0, n)
     }
 
+    /** Writes in slices, re-arming the write timeout after each, so it limits stalls rather than transfer time. */
     private fun timedWrite(b: ByteArray, off: Int, len: Int) {
-        timeout.after(runtime.writeTimeoutMs)
+        var pos = off
+        val end = off + len
         try {
-            io.write(b, off, len)
+            while (pos < end) {
+                val n = minOf(WRITE_SLICE, end - pos)
+                timeout.after(runtime.writeTimeoutMs)
+                io.write(b, pos, n)
+                pos += n
+            }
         } finally {
             timeout.clear()
         }
@@ -295,9 +302,15 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
     override fun writeFile(channel: FileChannel, position: Long, count: Long) {
         synchronized(writeLock) {
             flushOut()
-            timeout.after(runtime.writeTimeoutMs)
+            var pos = position
+            val end = position + count
             try {
-                io.transferFile(channel, position, count)
+                while (pos < end) {
+                    val n = minOf(WRITE_SLICE.toLong(), end - pos)
+                    timeout.after(runtime.writeTimeoutMs)
+                    io.transferFile(channel, pos, n)
+                    pos += n
+                }
             } finally {
                 timeout.clear()
             }
@@ -443,5 +456,6 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
 
     private companion object {
         val EMPTY = ByteArray(0)
+        const val WRITE_SLICE = 64 * 1024
     }
 }
