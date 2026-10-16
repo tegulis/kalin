@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
 import net.tegulis.kalin.config.ServerConfig
+import net.tegulis.kalin.http.nonBlocking
 import net.tegulis.kalin.testtools.TestMode
 import net.tegulis.kalin.testtools.testKalin
 
@@ -139,6 +140,17 @@ class EventLoopFixesTest :
                     onLoop.get() shouldBe true
                     failure.get() shouldBe null
                     Files.delete(file)
+                }
+
+                test("X-HTTP-Method-Override never runs a blocking handler on the loop") {
+                    testKalin(mode = TestMode.REAL, engine = Engine.EVENT_LOOP, transport = transport) {
+                        app {
+                            routes.post("/m", nonBlocking { it.result("post") })
+                            routes.put("/m") { it.result(if (Thread.currentThread().isVirtual) "virtual" else "loop") }
+                        }
+                        client.post("/m") { header("X-HTTP-Method-Override", "PUT") }.bodyAsText() shouldBe "virtual"
+                        client.post("/m").bodyAsText() shouldBe "post"
+                    }
                 }
             }
         }

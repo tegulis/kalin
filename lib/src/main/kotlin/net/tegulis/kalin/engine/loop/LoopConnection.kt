@@ -25,6 +25,7 @@ import net.tegulis.kalin.engine.ManagedConnection
 import net.tegulis.kalin.engine.RequestHead
 import net.tegulis.kalin.engine.ServerRuntime
 import net.tegulis.kalin.engine.TimerWheel
+import net.tegulis.kalin.http.Header
 
 /**
  * The HTTP/1.1 state machine of one connection on an event loop: `READ_HEAD → (READ_BODY) → HANDLE → WRITE → READ_HEAD
@@ -250,7 +251,7 @@ internal class LoopConnection(
         runtime.totalRequests.incrementAndGet()
         bodyRemaining = if (h.chunked) -1 else maxOf(0, h.contentLength)
         chunked = if (h.chunked) ChunkedDecoder(limits) else null
-        val inline = inlineExecution || runtime.handler.isNonBlocking(h.method, h.path)
+        val inline = inlineExecution || isNonBlocking(h)
         if (inline && (!h.hasBody || h.chunked || h.contentLength <= MAX_INLINE_BODY)) {
             if (h.hasBody) {
                 if (h.expectContinue) exchange.sendContinueIfNeeded()
@@ -265,6 +266,17 @@ internal class LoopConnection(
         pipe = if (h.hasBody) PipeBody(exchange, started = !h.expectContinue) else null
         state = HANDLING
         Thread.ofVirtual().name("kalin-handler").start { runtime.runHandler(exchange) }
+    }
+
+    /**
+     * True if the handlers for [h] may run on the loop. `X-HTTP-Method-Override` may turn a POST into another method
+     * (`ctx.method()`, when enabled), so then the handlers of both methods must be non-blocking.
+     */
+    private fun isNonBlocking(h: RequestHead): Boolean {
+        if (!runtime.handler.isNonBlocking(h.method, h.path)) return false
+        if (h.method != "POST") return true
+        val override = h.headers[Header.X_HTTP_METHOD_OVERRIDE]?.trim()?.uppercase() ?: return true
+        return runtime.handler.isNonBlocking(override, h.path)
     }
 
     private fun readInlineBody(): Boolean {
