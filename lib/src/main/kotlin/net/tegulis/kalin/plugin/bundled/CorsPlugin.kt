@@ -23,7 +23,10 @@ public class CorsPluginConfig {
         /** Send `Access-Control-Allow-Credentials: true`. */
         @JvmField public var allowCredentials: Boolean = false
 
-        /** Echo the client's origin instead of a fixed list. */
+        /**
+         * Echo the client's origin instead of a fixed list. Combined with [allowCredentials] this lets any website make
+         * credentialed requests (with the user's cookies) and read the responses; a warning is logged at startup.
+         */
         @JvmField public var reflectClientOrigin: Boolean = false
 
         /** The scheme assumed for hosts given without one. */
@@ -95,7 +98,10 @@ public class CorsPlugin(userConfig: Consumer<CorsPluginConfig>? = null) :
             require(!("*" in origins && rule.allowCredentials)) {
                 "Cannot use `anyHost()` / Origin: * if `allowCredentials` is true as that is rejected by all browsers."
             }
-            config.routes.before(rule.path) { ctx -> handleCors(ctx, rule) }
+            config.routes.before(rule.path) { ctx ->
+                addVaryOrigin(ctx)
+                handleCors(ctx, rule)
+            }
             config.routes.after(rule.path) { ctx ->
                 if (
                     ctx.method() == HandlerType.OPTIONS &&
@@ -105,6 +111,31 @@ public class CorsPlugin(userConfig: Consumer<CorsPluginConfig>? = null) :
                 }
             }
         }
+    }
+
+    override fun onStart(config: KalinConfig) {
+        for (rule in pluginConfig.rules) {
+            if (rule.reflectClientOrigin && rule.allowCredentials) {
+                log.log(
+                    System.Logger.Level.WARNING,
+                    "CORS rule for path '${rule.path}' reflects any client origin and allows credentials: " +
+                        "any website can make credentialed requests on behalf of your users and read the responses. " +
+                        "Use allowHost(...) to list trusted origins instead.",
+                )
+            }
+        }
+    }
+
+    /** Responses differ by `Origin`, also those to requests without one, so caches must key on it. */
+    private fun addVaryOrigin(ctx: Context) {
+        val existing = ctx.responseHeaders(Header.VARY)
+        if (existing.isEmpty()) {
+            ctx.header(Header.VARY, Header.ORIGIN)
+            return
+        }
+        val tokens = existing.flatMap { it.split(',') }.map { it.trim() }
+        if (tokens.any { it == "*" || it.equals(Header.ORIGIN, ignoreCase = true) }) return
+        ctx.header(Header.VARY, existing.joinToString(", ") + ", " + Header.ORIGIN)
     }
 
     private fun handleCors(ctx: Context, rule: CorsPluginConfig.CorsRule) {
@@ -135,10 +166,13 @@ public class CorsPlugin(userConfig: Consumer<CorsPluginConfig>? = null) :
                 }
             }
         ctx.header(Header.ACCESS_CONTROL_ALLOW_ORIGIN, allow)
-        ctx.addHeader(Header.VARY, Header.ORIGIN)
         if (rule.allowCredentials) ctx.header(Header.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
         if (rule.headersToExpose().isNotEmpty())
             ctx.header(Header.ACCESS_CONTROL_EXPOSE_HEADERS, rule.headersToExpose().joinToString(","))
+    }
+
+    private companion object {
+        val log: System.Logger = System.getLogger("net.tegulis.kalin.CorsPlugin")
     }
 
     private data class Origin(val scheme: String, val host: String, val port: Int)
