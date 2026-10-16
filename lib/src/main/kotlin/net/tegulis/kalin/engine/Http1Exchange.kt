@@ -194,6 +194,18 @@ internal class Http1Exchange(
         complete()
     }
 
+    override fun sendFile(path: java.nio.file.Path, position: Long, count: Long) {
+        writeHead(count)
+        if (!head.isHead && bodyAllowed() && count > 0) io.writeFile(path, position, count)
+        complete()
+    }
+
+    /** Ends the exchange after a failure: the connection is closed after what was written so far. */
+    fun abort() {
+        closeAfter = true
+        complete()
+    }
+
     private fun complete() {
         if (isCompleted) return
         isCompleted = true

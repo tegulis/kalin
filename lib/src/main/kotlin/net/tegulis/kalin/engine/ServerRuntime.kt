@@ -73,6 +73,27 @@ internal class ServerRuntime(val config: ServerConfig, val handler: ExchangeHand
         openConnections.decrementAndGet()
     }
 
+    /** Runs the handler for [exchange], answering `500` (or aborting) if it throws. */
+    fun runHandler(exchange: Http1Exchange) {
+        try {
+            handler.handle(exchange)
+        } catch (e: Throwable) {
+            log.log(Level.ERROR, "Unhandled error in request pipeline", e)
+            try {
+                if (!exchange.isCommitted) {
+                    exchange.status = 500
+                    exchange.responseHeaders.clear()
+                    exchange.closeConnectionAfterResponse()
+                    exchange.send("Internal Server Error".toByteArray())
+                } else if (!exchange.isCompleted) {
+                    exchange.abort()
+                }
+            } catch (_: Throwable) {
+                exchange.abort()
+            }
+        }
+    }
+
     /** Closes idle connections, waits for active ones, then force-closes the rest. */
     fun drainConnections() {
         stopping = true

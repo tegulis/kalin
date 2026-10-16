@@ -4,8 +4,6 @@ import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
-import java.nio.channels.FileChannel
-import java.nio.file.StandardOpenOption
 import java.util.ArrayDeque
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -691,9 +689,7 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
             return
         }
         if (resource is Resource.FileResource) {
-            FileChannel.open(resource.path, StandardOpenOption.READ).use { ch ->
-                exchange.sendFile(ch, r.position, r.count)
-            }
+            exchange.sendFile(resource.path, r.position, r.count)
             return
         }
         resource.open().use { input ->

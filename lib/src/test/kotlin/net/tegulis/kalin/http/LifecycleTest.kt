@@ -247,6 +247,9 @@ class LifecycleTest :
                 }
                 client.get("/x")
                 client.get("/missing")
+                // the logger runs after the response was sent, so wait for it
+                val deadline = System.currentTimeMillis() + 5000
+                while (logged.size < 2 && System.currentTimeMillis() < deadline) Thread.sleep(5)
             }
             logged shouldBe listOf("GET /x 200 true", "GET /missing 404 true")
         }

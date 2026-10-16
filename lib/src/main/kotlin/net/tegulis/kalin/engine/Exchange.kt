@@ -67,8 +67,13 @@ public interface Exchange {
      */
     public fun startStreaming(contentLength: Long = -1): OutputStream
 
-    /** Sends [count] bytes of a file as the complete response body (uses `sendfile` where available). */
+    /** Sends [count] bytes of a file as the complete response body. */
     public fun sendFile(channel: FileChannel, position: Long, count: Long)
+
+    /**
+     * Sends [count] bytes of the file at [path] as the complete response body (zero-copy `sendfile` where available).
+     */
+    public fun sendFile(path: java.nio.file.Path, position: Long, count: Long)
 
     /** Closes the connection after this response instead of keeping it alive. */
     public fun closeConnectionAfterResponse()
@@ -93,6 +98,11 @@ internal interface ExchangeIo {
 
     /** Writes a file region as response body bytes (after flushing buffered bytes). */
     fun writeFile(channel: FileChannel, position: Long, count: Long)
+
+    /** Writes a region of the file at [path] as response body bytes. */
+    fun writeFile(path: java.nio.file.Path, position: Long, count: Long) {
+        FileChannel.open(path, java.nio.file.StandardOpenOption.READ).use { writeFile(it, position, count) }
+    }
 
     /** Scratch buffer used to build response heads; reused per connection. */
     val scratch: ByteBuilder

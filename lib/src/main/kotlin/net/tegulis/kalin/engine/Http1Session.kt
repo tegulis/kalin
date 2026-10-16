@@ -121,19 +121,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
     private fun dispatch(exchange: Http1Exchange) {
         val latch = CountDownLatch(1)
         completed = latch
-        try {
-            runtime.handler.handle(exchange)
-        } catch (e: Throwable) {
-            ServerRuntime.log.log(System.Logger.Level.ERROR, "Unhandled error in request pipeline", e)
-            if (!exchange.isCommitted) {
-                exchange.status = 500
-                exchange.responseHeaders.clear()
-                exchange.closeConnectionAfterResponse()
-                exchange.send("Internal Server Error".toByteArray())
-            } else {
-                exchange.closeConnectionAfterResponse()
-            }
-        }
+        runtime.runHandler(exchange)
         // The pipeline may complete the response from another thread (async); wait for it.
         if (!exchange.isCompleted) {
             while (!latch.await(1, TimeUnit.SECONDS)) {
@@ -186,8 +174,11 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
     }
 
     /** Reads the next request head; returns null when the client closed the connection between requests. */
+    private var headDeadlineSet = false
+
     private fun readHead(): RequestHead? {
         parser.reset()
+        headDeadlineSet = false
         while (true) {
             if (inPos < inLimit) {
                 inPos += parser.skipLeadingEmptyLines(inBuf, inPos, inLimit)
@@ -199,6 +190,11 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                         timeout.clear()
                         return head
                     }
+                    if (!headDeadlineSet) {
+                        idle = false
+                        headDeadlineSet = true
+                        timeout.after(runtime.requestTimeoutMs)
+                    }
                 }
             }
             if (inPos == inLimit) {
@@ -206,10 +202,13 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                 inLimit = 0
                 parser.reset()
                 idle = true
+                headDeadlineSet = false
                 if (runtime.stopping) return null
                 timeout.after(runtime.idleTimeoutMs)
-            } else {
+            } else if (!headDeadlineSet) {
+                // The whole head must arrive within the request timeout (slowloris protection)
                 idle = false
+                headDeadlineSet = true
                 timeout.after(runtime.requestTimeoutMs)
             }
             val n = fill()

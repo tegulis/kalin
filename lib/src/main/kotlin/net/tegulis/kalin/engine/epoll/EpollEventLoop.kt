@@ -1,0 +1,219 @@
+package net.tegulis.kalin.engine.epoll
+
+import java.lang.foreign.Arena
+import java.lang.foreign.MemorySegment
+import java.lang.foreign.ValueLayout.JAVA_INT
+import java.lang.foreign.ValueLayout.JAVA_LONG
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.nio.file.Path
+import net.tegulis.kalin.engine.ServerRuntime
+import net.tegulis.kalin.engine.loop.EventLoop
+import net.tegulis.kalin.engine.loop.LoopConnection
+import net.tegulis.kalin.engine.loop.LoopSocket
+
+/**
+ * An event loop on Linux epoll (edge-triggered) through FFM. Each loop owns its own listening socket (`SO_REUSEPORT`),
+ * so the kernel balances new connections between loops without a shared acceptor.
+ */
+internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val listenFd: Int) :
+    EventLoop(name, runtime) {
+    private val arena: Arena = Arena.ofShared()
+    internal val scratch = Native.Scratch(arena)
+    private val wakeupScratch = Native.Scratch(arena)
+    private val epfd = Native.epollCreate(scratch)
+    private val eventFd = Native.eventfd(scratch)
+    private val maxEvents = 512
+    private val events: MemorySegment = arena.allocate(Native.epollEventSize * maxEvents, 8)
+    private val peer: MemorySegment = arena.allocate(64, 8)
+    private val peerLen: MemorySegment = arena.allocate(8, 8)
+    private val connections = HashMap<Int, LoopConnection>()
+    @Volatile private var accepting = true
+
+    init {
+        Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, eventFd, Native.EPOLLIN, TAG_WAKEUP)
+        Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
+    }
+
+    override fun wakeup() {
+        synchronized(wakeupScratch) { Native.writeEventfd(wakeupScratch, eventFd) }
+    }
+
+    override fun poll(timeoutMs: Long) {
+        val n =
+            Native.epollWait(scratch, epfd, events, maxEvents, timeoutMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        for (i in 0 until n) {
+            val base = i * Native.epollEventSize
+            val ev = events.get(JAVA_INT, base)
+            val data = events.get(JAVA_LONG_UNALIGNED, base + Native.epollDataOffset)
+            when (data) {
+                TAG_WAKEUP -> Native.drainEventfd(scratch, eventFd)
+                TAG_LISTEN -> acceptAll()
+                else -> {
+                    val connection = connections[data.toInt()] ?: continue
+                    if (ev and Native.EPOLLOUT != 0) connection.onWritable()
+                    if (ev and (Native.EPOLLIN or Native.EPOLLRDHUP or Native.EPOLLERR or Native.EPOLLHUP) != 0)
+                        connection.onReadable()
+                }
+            }
+        }
+    }
+
+    private fun acceptAll() {
+        while (accepting) {
+            val fd =
+                try {
+                    Native.accept(scratch, listenFd, peer, peerLen)
+                } catch (e: NativeException) {
+                    ServerRuntime.log.log(System.Logger.Level.WARNING, "accept failed: ${e.message}")
+                    return
+                }
+            if (fd < 0) return
+            if (runtime.stopping || !runtime.tryOpen()) {
+                Native.close(scratch, fd)
+                continue
+            }
+            try {
+                if (runtime.config.tcpNoDelay)
+                    Native.setIntOption(scratch, fd, Native.IPPROTO_TCP, Native.TCP_NODELAY, 1)
+                val remote = Native.parseSockaddr(peer)
+                val socket = EpollSocket(fd, this, remote)
+                val connection = LoopConnection(socket, this, runtime)
+                connections[fd] = connection
+                Native.epollCtl(
+                    scratch,
+                    epfd,
+                    Native.EPOLL_CTL_ADD,
+                    fd,
+                    Native.EPOLLIN or Native.EPOLLOUT or Native.EPOLLRDHUP or Native.EPOLLET,
+                    fd.toLong(),
+                )
+                connection.start()
+                connection.onReadable()
+            } catch (e: Exception) {
+                ServerRuntime.log.log(System.Logger.Level.WARNING, "Could not register connection: ${e.message}")
+                connections.remove(fd)?.closeNow()
+                    ?: run {
+                        Native.close(scratch, fd)
+                        runtime.closed()
+                    }
+            }
+        }
+    }
+
+    internal fun removed(fd: Int) {
+        connections.remove(fd)
+    }
+
+    /** Stops accepting new connections (called on the loop thread). */
+    fun stopAccepting() {
+        accepting = false
+        try {
+            Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_DEL, listenFd, 0, 0)
+        } catch (_: Exception) {}
+        Native.close(scratch, listenFd)
+    }
+
+    val localAddress: InetSocketAddress?
+        get() = Native.localAddress(scratch, listenFd)
+
+    override fun cleanup() {
+        for (c in connections.values.toList()) c.closeNow()
+        if (accepting) {
+            accepting = false
+            Native.close(scratch, listenFd)
+        }
+        Native.close(scratch, eventFd)
+        Native.close(scratch, epfd)
+        // The arena is shared with wakeup callers; leave it to the GC-independent close after the thread ends
+        try {
+            arena.close()
+        } catch (_: IllegalStateException) {}
+    }
+
+    companion object {
+        const val TAG_WAKEUP = -1L
+        const val TAG_LISTEN = -2L
+        private val JAVA_LONG_UNALIGNED = JAVA_LONG.withByteAlignment(1)
+
+        /** Creates a non-blocking listening socket with `SO_REUSEPORT`. */
+        fun listen(scratch: Native.Scratch, host: String?, port: Int, backlog: Int): Int {
+            val address = host?.let { InetAddress.getByName(it) }
+            val candidates =
+                if (address != null) listOf(address)
+                else listOf(InetAddress.getByName("::"), InetAddress.getByName("0.0.0.0"))
+            var lastError: Exception? = null
+            for (a in candidates) {
+                val family = if (a is java.net.Inet6Address) Native.AF_INET6 else Native.AF_INET
+                val fd =
+                    try {
+                        Native.socket(scratch, family)
+                    } catch (e: NativeException) {
+                        lastError = e
+                        continue
+                    }
+                try {
+                    Native.setIntOption(scratch, fd, Native.SOL_SOCKET, Native.SO_REUSEADDR, 1)
+                    Native.setIntOption(scratch, fd, Native.SOL_SOCKET, Native.SO_REUSEPORT, 1)
+                    if (family == Native.AF_INET6 && address == null) {
+                        Native.setIntOption(scratch, fd, Native.IPPROTO_IPV6, Native.IPV6_V6ONLY, 0)
+                    }
+                    Native.bind(scratch, fd, a, port)
+                    Native.listen(scratch, fd, backlog)
+                    return fd
+                } catch (e: Exception) {
+                    Native.close(scratch, fd)
+                    if (e is java.net.BindException) throw e
+                    lastError = e
+                }
+            }
+            throw lastError ?: java.io.IOException("Could not listen")
+        }
+    }
+}
+
+/** A non-blocking socket file descriptor as [LoopSocket]. */
+internal class EpollSocket(
+    private val fd: Int,
+    private val loop: EpollEventLoop,
+    override val remoteAddress: InetSocketAddress?,
+) : LoopSocket {
+    private val s = loop.scratch
+    private var open = true
+    override val edgeTriggered: Boolean = true
+    override val localAddress: InetSocketAddress? by lazy { if (open) Native.localAddress(s, fd) else null }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int = Native.read(s, fd, b, off, len)
+
+    override fun write(b: ByteArray, off: Int, len: Int): Int = Native.write(s, fd, b, off, len)
+
+    override fun openFile(path: Path): AutoCloseable {
+        val fileFd = Arena.ofConfined().use { a -> Native.openRead(s, a, path.toAbsolutePath().toString()) }
+        return AutoCloseable { Native.close(s, fileFd) }.also { handles[it] = fileFd }
+    }
+
+    private val handles = HashMap<AutoCloseable, Int>()
+
+    override fun sendFile(file: AutoCloseable, position: Long, count: Long): Long {
+        val inFd = handles[file] ?: throw java.io.IOException("Unknown file handle")
+        val n = Native.sendfile(s, fd, inFd, position, minOf(count, 1L shl 30))
+        return n
+    }
+
+    override fun setReadInterest(on: Boolean) {}
+
+    override fun setWriteInterest(on: Boolean) {}
+
+    override fun shutdownOutput() {
+        if (open) Native.shutdownOutput(s, fd)
+    }
+
+    override fun close() {
+        if (!open) return
+        open = false
+        loop.removed(fd)
+        Native.close(s, fd)
+        for (h in handles.values) Native.close(s, h)
+        handles.clear()
+    }
+}
