@@ -85,7 +85,7 @@ public class Kalin private constructor(private val cfg: KalinConfig) {
                         ex,
                     )
                 }
-            boundPort = address?.port ?: cfg.server.port
+            boundPort = address?.port ?: 0
             started = true
             if (cfg.startup.showBanner) {
                 val ms = (System.nanoTime() - startNanos) / 1_000_000
