@@ -7,6 +7,8 @@ import java.lang.foreign.ValueLayout.JAVA_LONG
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.nio.file.Path
+import net.tegulis.kalin.engine.Http1Exchange
+import net.tegulis.kalin.engine.OverloadPolicy
 import net.tegulis.kalin.engine.ServerRuntime
 import net.tegulis.kalin.engine.loop.EventLoop
 import net.tegulis.kalin.engine.loop.LoopConnection
@@ -100,6 +102,12 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
             backingOff = false
             if (fd < 0) return
             if (runtime.stopping || !runtime.tryOpen()) {
+                if (!runtime.stopping && runtime.config.overloadPolicy == OverloadPolicy.REJECT_503) {
+                    // Best effort, like the NIO acceptor: a fresh socket's send buffer takes the small response
+                    try {
+                        Native.write(scratch, fd, REJECT_503, 0, REJECT_503.size)
+                    } catch (_: NativeException) {}
+                }
                 Native.close(scratch, fd)
                 continue
             }
@@ -206,6 +214,7 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
         const val TAG_WAKEUP = -1L
         const val TAG_LISTEN = -2L
         const val ACCEPT_BACKOFF_MS = 100L
+        private val REJECT_503 = Http1Exchange.errorResponse(503, "Service Unavailable")
         private val JAVA_LONG_UNALIGNED = JAVA_LONG.withByteAlignment(1)
 
         /** Creates a non-blocking listening socket with `SO_REUSEPORT`. */
