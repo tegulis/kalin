@@ -305,7 +305,7 @@ internal class EpollSocket(
 
     override fun setReadInterest(on: Boolean) {}
 
-    /** EPOLLOUT is only registered while a write is incomplete (like Netty), avoiding readiness noise. */
+    /** EPOLLOUT is only registered while a write is incomplete (like Netty) to avoid readiness noise. */
     override fun setWriteInterest(on: Boolean) {
         if (!open) return
         val events = if (on) BASE_EVENTS or Native.EPOLLOUT else BASE_EVENTS

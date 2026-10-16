@@ -49,8 +49,8 @@ constructor(
 
         /**
          * An engine that compiles templates from [path] on demand and reloads them when they change (development).
-         * Kotlin `.kte` templates additionally need `gg.jte:jte-kotlin` on the classpath. Compiled template classes are
-         * written to [classDirectory] (jte's default `jte-classes`, relative to the working directory).
+         * Kotlin `.kte` templates also need `gg.jte:jte-kotlin` on the classpath. Compiled template classes are written
+         * to [classDirectory] (jte's default `jte-classes`, relative to the working directory).
          */
         @JvmStatic
         @JvmOverloads
