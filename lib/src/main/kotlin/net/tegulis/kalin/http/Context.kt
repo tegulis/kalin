@@ -441,7 +441,7 @@ public abstract class Context {
 
     /** Serializes [obj] as JSON of [type] and sets the JSON content type. */
     public open fun json(obj: Any?, type: KType): Context =
-        contentType(ContentType.APPLICATION_JSON).result(jsonMapper().toJsonString(obj, type))
+        contentType(ContentType.APPLICATION_JSON).result(jsonMapper().toJsonBytes(obj, type))
 
     /** Serializes [obj] as JSON of the Java [type]. */
     public open fun json(obj: Any, type: Type): Context =

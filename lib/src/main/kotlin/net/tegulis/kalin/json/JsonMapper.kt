@@ -25,6 +25,9 @@ public interface JsonMapper {
     public fun toJsonString(obj: Any?, type: KType): String =
         if (obj == null) "null" else toJsonString(obj, type.javaType)
 
+    /** Serializes [obj] of Kotlin type [type] to UTF-8 bytes. Mappers can override this to skip the string. */
+    public fun toJsonBytes(obj: Any?, type: KType): ByteArray = toJsonString(obj, type).toByteArray(Charsets.UTF_8)
+
     /** Serializes [obj] to a stream. */
     public fun toJsonStream(obj: Any, type: Type): InputStream =
         ByteArrayInputStream(toJsonString(obj, type).toByteArray())

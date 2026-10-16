@@ -85,7 +85,7 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
                     epfd,
                     Native.EPOLL_CTL_ADD,
                     fd,
-                    Native.EPOLLIN or Native.EPOLLOUT or Native.EPOLLRDHUP or Native.EPOLLET,
+                    EpollSocket.BASE_EVENTS,
                     fd.toLong(),
                 )
                 connection.start()
@@ -99,6 +99,12 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
                     }
             }
         }
+    }
+
+    internal fun modify(fd: Int, events: Int) {
+        try {
+            Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_MOD, fd, events, fd.toLong())
+        } catch (_: NativeException) {}
     }
 
     internal fun removed(fd: Int) {
@@ -202,7 +208,16 @@ internal class EpollSocket(
 
     override fun setReadInterest(on: Boolean) {}
 
-    override fun setWriteInterest(on: Boolean) {}
+    /** EPOLLOUT is only registered while a write is incomplete (like Netty), avoiding readiness noise. */
+    override fun setWriteInterest(on: Boolean) {
+        if (!open) return
+        val events = if (on) BASE_EVENTS or Native.EPOLLOUT else BASE_EVENTS
+        loop.modify(fd, events)
+    }
+
+    companion object {
+        const val BASE_EVENTS = Native.EPOLLIN or Native.EPOLLRDHUP or Native.EPOLLET
+    }
 
     override fun shutdownOutput() {
         if (open) Native.shutdownOutput(s, fd)

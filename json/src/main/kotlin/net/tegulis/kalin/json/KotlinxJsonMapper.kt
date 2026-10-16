@@ -81,6 +81,25 @@ public class KotlinxJsonMapper(
         return json.encodeToString(JsonElement.serializer(), toElement(obj))
     }
 
+    /** Serializers whose recent outputs were large; they use the streaming string encoder. */
+    private val largeOutputs = ConcurrentHashMap.newKeySet<KSerializer<*>>()
+
+    override fun toJsonBytes(obj: Any?, type: KType): ByteArray {
+        if (obj == null) return NULL_BYTES
+        val serializer = if (isDynamic(type)) null else serializerFor(type)
+        if (serializer == null) return Utf8JsonWriter.encode(json, JsonElement.serializer(), toElement(obj))
+        // Small values: kotlinx's tree encoder needs no shared (synchronized) buffer pool, which scales better across
+        // event loop threads. Large values: the streaming encoder is faster and allocates less.
+        if (serializer in largeOutputs) {
+            val bytes = json.encodeToString(serializer, obj).toByteArray(Charsets.UTF_8)
+            if (bytes.size < SMALL_OUTPUT) largeOutputs.remove(serializer)
+            return bytes
+        }
+        val bytes = Utf8JsonWriter.encode(json, serializer, obj)
+        if (bytes.size > LARGE_OUTPUT) largeOutputs.add(serializer)
+        return bytes
+    }
+
     override fun toJsonString(obj: Any, type: Type): String {
         serializerFor(type)?.let {
             return json.encodeToString(it, obj)
@@ -214,6 +233,10 @@ public class KotlinxJsonMapper(
         }
 
     public companion object {
+        private val NULL_BYTES = "null".toByteArray()
+        private const val SMALL_OUTPUT = 512
+        private const val LARGE_OUTPUT = 2048
+
         /** The default [Json]: ignores unknown keys, encodes defaults. */
         @JvmField
         public val DEFAULT_JSON: Json = Json {
