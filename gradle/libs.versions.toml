@@ -2,23 +2,36 @@
 gradle-ktfmt = "0.27.0"
 gradle-shadow = "9.6.1"
 gradle-versions = "0.54.0"
+jte = "3.2.4"
 kotest = "6.2.5"
 kotlin = "2.4.20"
+kotlin-inject = "0.9.0"
 kotlin-logging = "8.0.4"
+kotlinx-serialization = "1.11.0"
+ksp = "2.3.12"
 logback-classic = "1.6.3"
 logstash-logback-encoder = "9.0"
 slf4j = "2.0.17"
 
 [libraries]
+jte = { module = "gg.jte:jte", version.ref = "jte" }
+jte-kotlin = { module = "gg.jte:jte-kotlin", version.ref = "jte" }
 kotest-runner = { module = "io.kotest:kotest-runner-junit6", version.ref = "kotest" }
+kotlin-inject-compiler = { module = "me.tatarka.inject:kotlin-inject-compiler-ksp", version.ref = "kotlin-inject" }
+kotlin-inject-runtime = { module = "me.tatarka.inject:kotlin-inject-runtime", version.ref = "kotlin-inject" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlin-logging" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback-classic" }
 logstash-logback-encoder = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstash-logback-encoder" }
 slf4j = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4j-jdk-platform-logging = { module = "org.slf4j:slf4j-jdk-platform-logging", version.ref = "slf4j" }
 
 [plugins]
+jte = { id = "gg.jte.gradle", version.ref = "jte" }
 kotest = { id = "io.kotest", version.ref = "kotest" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 gradle-ktfmt = { id = "com.ncorti.ktfmt.gradle", version.ref = "gradle-ktfmt" }
 gradle-shadow = { id = "com.gradleup.shadow", version.ref = "gradle-shadow" }
 gradle-versions = { id = "com.github.ben-manes.versions", version.ref = "gradle-versions" }

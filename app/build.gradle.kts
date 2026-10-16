@@ -1,8 +1,3 @@
-import com.ncorti.ktfmt.gradle.TrailingCommaManagementStrategy
-import org.gradle.api.tasks.testing.logging.TestExceptionFormat
-import org.gradle.api.tasks.testing.logging.TestLogEvent
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
     id("application")
     alias(libs.plugins.gradle.ktfmt)
@@ -12,9 +7,20 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
 }
 
-application.mainClass = "${project.group}.${project.name}.MainKt"
+description = "kalin-server: a standalone static file server built on Kalin"
+
+application {
+    mainClass = "${project.group}.${project.name}.MainKt"
+    applicationName = "kalin-server"
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+}
 
 tasks["shadowJar"].group = "distribution"
+
+tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar") {
+    manifest { attributes("Enable-Native-Access" to "ALL-UNNAMED", "Implementation-Version" to project.version) }
+    mergeServiceFiles()
+}
 
 listOf("startScripts", "distZip", "distTar", "shadowDistZip", "shadowDistTar").forEach { taskName ->
     tasks.named(taskName) {
@@ -27,63 +33,24 @@ listOf("startScripts", "distZip", "distTar", "shadowDistZip", "shadowDistTar").f
 tasks.register("packZip", Zip::class) {
     group = "distribution"
     dependsOn("shadowJar")
-    archiveFileName = "${project.name}-${project.version}.zip"
+    archiveFileName = "kalin-server-${project.version}.zip"
     destinationDirectory = file("build/distributions")
     from("build/libs") { include("${project.name}-${project.version}-all.jar") }
-    // Add assets here
-    // from("assets") {
-    // 	include("**/*")
-    // }
+    from("dist") { include("**/*") }
+    from(rootProject.file("LICENSE"))
 }
-
-kotlin.jvmToolchain(25)
 
 dependencies {
     implementation(project(":lib"))
-    // LOGGING
+    // LOGGING: Kalin logs through System.Logger, routed to SLF4J/Logback here
     implementation(libs.kotlin.logging)
     implementation(libs.slf4j)
+    runtimeOnly(libs.slf4j.jdk.platform.logging)
     runtimeOnly(libs.logback.classic)
     runtimeOnly(libs.logstash.logback.encoder)
     // TESTING
-    // Kotest
+    testImplementation(project(":testtools"))
     testImplementation(libs.kotest.runner)
 }
 
 kotest { enablePowerAssert = true }
-
-tasks.withType<Test> {
-    useJUnitPlatform()
-    // Check formatting before testing for good measure, even though it will be skipped since it is disabled below
-    dependsOn("ktfmtCheck")
-    enableAssertions = true
-    // Extra settings for very verbose testing
-    testLogging {
-        events = TestLogEvent.entries.filter { it != TestLogEvent.STARTED }.toSet()
-        exceptionFormat = TestExceptionFormat.FULL
-        showExceptions = true
-        showCauses = true
-        showStackTraces = true
-    }
-    // Google Truth: don't clean stack traces
-    systemProperty("com.google.common.truth.disable_stack_trace_cleaning", "true")
-    // Don't generate reports
-    reports.all { required = false }
-    // Temporary solution for MockK: https://github.com/mockk/mockk/issues/1171
-    jvmArgs("-XX:+EnableDynamicAgentLoading")
-}
-
-ktfmt {
-    kotlinLangStyle()
-    maxWidth.set(120)
-    removeUnusedImports.set(true)
-    trailingCommaManagementStrategy.set(TrailingCommaManagementStrategy.COMPLETE)
-}
-
-// Don't check formatting unless explicitly asked for
-listOf("", "Main", "Scripts", "Test").forEach { taskName ->
-    tasks.named("ktfmtCheck$taskName") { enabled = gradle.startParameter.taskNames.contains(this.name) }
-}
-
-// Format code before compiling
-tasks.withType<KotlinCompile> { dependsOn("ktfmtFormat") }
