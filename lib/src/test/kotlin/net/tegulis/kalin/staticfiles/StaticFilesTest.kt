@@ -99,6 +99,28 @@ class StaticFilesTest :
             }
         }
 
+        test("paths that are invalid on the file system are not found") {
+            resolveBelow(root.toPath(), "/a\u0000b") shouldBe null
+            resolveBelow(root.toPath(), "/../x") shouldBe null
+            resolveBelow(root.toPath(), "/dir/nested.json") shouldBe root.toPath().resolve("dir/nested.json")
+            testKalin {
+                app { staticFiles.add(root.absolutePath, Location.EXTERNAL) }
+                client.get("/a%3Ab%3C%7C%2A%3F").code shouldBe 404
+            }
+        }
+
+        test("Windows 8.3 short names cannot reach hidden files").config(
+            enabledIf = { System.getProperty("os.name").startsWith("Windows") }
+        ) {
+            val dir = tempdir()
+            File(dir, ".htaccess").writeText("secret")
+            testKalin {
+                app { staticFiles.add(dir.absolutePath, Location.EXTERNAL) }
+                client.get("/HTACCE~1").code shouldBe 404
+                client.get("/a%3Ab").code shouldBe 404
+            }
+        }
+
         test("conditional requests and ranges") {
             testKalin {
                 app { staticFiles.add(root.absolutePath, Location.EXTERNAL) }

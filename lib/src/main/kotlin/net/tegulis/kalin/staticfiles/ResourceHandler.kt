@@ -6,6 +6,7 @@ import java.net.URL
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.file.Files
+import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -93,6 +94,14 @@ internal class StaticLocation(val config: StaticFileConfig) {
             null
         }
     }
+    /** [root] with the file system's real names (Windows long names) but symbolic links kept. */
+    private val namedRoot: Path? = root?.let {
+        try {
+            it.toRealPath(LinkOption.NOFOLLOW_LINKS)
+        } catch (_: IOException) {
+            null
+        }
+    }
     private val classpathRoot: String = config.directory.trim('/').let { if (it.isEmpty()) "" else "$it/" }
     private val cache = CompressedCache
 
@@ -135,15 +144,14 @@ internal class StaticLocation(val config: StaticFileConfig) {
 
     private fun resolveExternal(ctx: Context, rel: String): Resource? {
         val root = root!!
-        val file = root.resolve(rel.trimStart('/')).normalize()
-        if (!file.startsWith(root)) return null
+        val file = resolveBelow(root, rel) ?: return null
         val attrs =
             try {
                 Files.readAttributes(file, BasicFileAttributes::class.java)
             } catch (_: IOException) {
                 return null
             }
-        if (!aliasAllowed(file)) return null
+        if (!aliasAllowed(file) || hiddenByRealName(file)) return null
         if (attrs.isDirectory) {
             if (!rel.endsWith("/") && rel.isNotEmpty()) {
                 val q = ctx.queryString()?.let { "?$it" } ?: ""
@@ -151,7 +159,7 @@ internal class StaticLocation(val config: StaticFileConfig) {
             }
             for (welcome in config.welcomeFiles) {
                 val w = file.resolve(welcome)
-                if (Files.isRegularFile(w) && aliasAllowed(w)) {
+                if (Files.isRegularFile(w) && aliasAllowed(w) && !hiddenByRealName(w)) {
                     val a = Files.readAttributes(w, BasicFileAttributes::class.java)
                     return Resource.FileResource(w, a.size(), a.lastModifiedTime().toMillis())
                 }
@@ -172,6 +180,23 @@ internal class StaticLocation(val config: StaticFileConfig) {
             }
         if (real.startsWith(realRoot)) return true
         return config.aliasCheck?.invoke(file) ?: false
+    }
+
+    /**
+     * True if hidden files are not served and a segment of [file]'s real name below the root starts with a dot. The
+     * request path was checked already, but on Windows an 8.3 short name (`HTACCE~1`) can name `.htaccess`.
+     */
+    private fun hiddenByRealName(file: Path): Boolean {
+        if (config.serveHiddenFiles) return false
+        val namedRoot = namedRoot ?: return true
+        val named =
+            try {
+                file.toRealPath(LinkOption.NOFOLLOW_LINKS)
+            } catch (_: IOException) {
+                return true
+            }
+        if (!named.startsWith(namedRoot)) return true
+        return namedRoot.relativize(named).any { it.toString().startsWith(".") }
     }
 
     private fun resolveClasspath(rel: String): Resource? {
@@ -382,6 +407,20 @@ internal class StaticLocation(val config: StaticFileConfig) {
     private companion object {
         val UNSATISFIABLE: Pair<Long, Long> = -1L to -1L
     }
+}
+
+/**
+ * Resolves the request path [rel] below [root], or null if it leaves the root or is not a valid path on this file
+ * system (on Windows `:`, `<`, `>`, `|`, `*` and `?`), so such requests are not found instead of failing.
+ */
+internal fun resolveBelow(root: Path, rel: String): Path? {
+    val file =
+        try {
+            root.resolve(rel.trimStart('/')).normalize()
+        } catch (_: InvalidPathException) {
+            return null
+        }
+    return if (file.startsWith(root)) file else null
 }
 
 /** A small LRU cache of compressed static resources. */
