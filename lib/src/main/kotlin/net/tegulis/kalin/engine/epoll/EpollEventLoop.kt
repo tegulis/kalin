@@ -32,7 +32,7 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
 
     init {
         Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, eventFd, Native.EPOLLIN, TAG_WAKEUP)
-        Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
+        if (listenFd >= 0) Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
     }
 
     override fun wakeup() {
@@ -73,31 +73,34 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
                 Native.close(scratch, fd)
                 continue
             }
-            try {
-                if (runtime.config.tcpNoDelay)
-                    Native.setIntOption(scratch, fd, Native.IPPROTO_TCP, Native.TCP_NODELAY, 1)
-                val remote = Native.parseSockaddr(peer)
-                val socket = EpollSocket(fd, this, remote)
-                val connection = LoopConnection(socket, this, runtime)
-                connections[fd] = connection
-                Native.epollCtl(
-                    scratch,
-                    epfd,
-                    Native.EPOLL_CTL_ADD,
-                    fd,
-                    EpollSocket.BASE_EVENTS,
-                    fd.toLong(),
-                )
-                connection.start()
-                connection.onReadable()
-            } catch (e: Exception) {
-                ServerRuntime.log.log(System.Logger.Level.WARNING, "Could not register connection: ${e.message}")
-                connections.remove(fd)?.closeNow()
-                    ?: run {
-                        Native.close(scratch, fd)
-                        runtime.closed()
-                    }
-            }
+            val remote = Native.parseSockaddr(peer)
+            val target = peers[nextPeer]
+            nextPeer = (nextPeer + 1) % peers.size
+            if (target === this) register(fd, remote) else target.execute { target.register(fd, remote) }
+        }
+    }
+
+    /** The loops accepted connections are distributed to (round-robin), including this one. */
+    var peers: List<EpollEventLoop> = listOf(this)
+    private var nextPeer = 0
+
+    /** Registers an accepted connection with this loop (loop thread). */
+    private fun register(fd: Int, remote: InetSocketAddress?) {
+        try {
+            if (runtime.config.tcpNoDelay) Native.setIntOption(scratch, fd, Native.IPPROTO_TCP, Native.TCP_NODELAY, 1)
+            val socket = EpollSocket(fd, this, remote)
+            val connection = LoopConnection(socket, this, runtime)
+            connections[fd] = connection
+            Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, fd, EpollSocket.BASE_EVENTS, fd.toLong())
+            connection.start()
+            connection.onReadable()
+        } catch (e: Exception) {
+            ServerRuntime.log.log(System.Logger.Level.WARNING, "Could not register connection: ${e.message}")
+            connections.remove(fd)?.closeNow()
+                ?: run {
+                    Native.close(scratch, fd)
+                    runtime.closed()
+                }
         }
     }
 
@@ -114,6 +117,7 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
     /** Stops accepting new connections (called on the loop thread). */
     fun stopAccepting() {
         accepting = false
+        if (listenFd < 0) return
         try {
             Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_DEL, listenFd, 0, 0)
         } catch (_: Exception) {}
@@ -121,13 +125,13 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
     }
 
     val localAddress: InetSocketAddress?
-        get() = Native.localAddress(scratch, listenFd)
+        get() = if (listenFd >= 0) Native.localAddress(scratch, listenFd) else null
 
     override fun cleanup() {
         for (c in connections.values.toList()) c.closeNow()
         if (accepting) {
             accepting = false
-            Native.close(scratch, listenFd)
+            if (listenFd >= 0) Native.close(scratch, listenFd)
         }
         Native.close(scratch, eventFd)
         Native.close(scratch, epfd)

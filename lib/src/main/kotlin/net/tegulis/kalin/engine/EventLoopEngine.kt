@@ -37,13 +37,22 @@ internal class EventLoopEngine(private val runtime: ServerRuntime, private val e
             Arena.ofConfined().use { arena ->
                 val scratch = Native.Scratch(arena)
                 for (i in 0 until count) {
-                    val fd = EpollEventLoop.listen(scratch, config.host, port, config.backlog)
+                    // One SO_REUSEPORT listener per loop (kernel balancing), or one listener on loop 0 that hands
+                    // connections out round-robin (even balancing, the default)
+                    val fd =
+                        if (config.reusePort || i == 0)
+                            EpollEventLoop.listen(scratch, config.host, port, config.backlog)
+                        else -1
                     val loop = EpollEventLoop("kalin-epoll-$i", runtime, fd)
                     if (i == 0) {
                         address = loop.localAddress
                         port = address?.port ?: port
                     }
                     loops.add(loop)
+                }
+                if (!config.reusePort) {
+                    val epollLoops = loops.map { it as EpollEventLoop }
+                    epollLoops[0].peers = epollLoops
                 }
             }
         } catch (e: Exception) {

@@ -24,6 +24,7 @@ fun main(args: Array<String>) {
             config.server.transport = Transport.valueOf(options["transport"] ?: "AUTO")
             config.server.handlerExecution = HandlerExecution.valueOf(options["execution"] ?: "VIRTUAL_THREAD")
             options["loops"]?.let { config.server.eventLoops = it.toInt() }
+            options["reuseport"]?.let { config.server.reusePort = it.toBoolean() }
             config.server.serverHeader = "Kalin"
             config.http.compressionStrategy = net.tegulis.kalin.compression.CompressionStrategy.NONE
             config.routes.get(

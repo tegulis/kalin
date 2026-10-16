@@ -69,6 +69,13 @@ public class ServerConfig {
     /** Sets `TCP_NODELAY` on accepted sockets. */
     public var tcpNoDelay: Boolean = true
 
+    /**
+     * With the epoll transport, give every event loop its own `SO_REUSEPORT` listening socket so the kernel spreads
+     * connections. By default one loop accepts and hands connections out round-robin, which balances better when there
+     * are few connections per loop.
+     */
+    public var reusePort: Boolean = false
+
     /** The size of the per-connection response buffer. */
     public var outputBufferSize: Int = 16 * 1024
 }

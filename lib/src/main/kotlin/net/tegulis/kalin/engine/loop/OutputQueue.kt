@@ -102,6 +102,12 @@ internal class OutputQueue(private val chunkSize: Int) {
                     val seg = segs.peekFirst() ?: break
                     when (seg) {
                         is Bytes -> {
+                            if (seg.len == 0) {
+                                // the retained, empty buffer of the last response: nothing to write
+                                if (segs.size == 1) break
+                                segs.pollFirst()
+                                continue
+                            }
                             val n = socket.write(seg.buf, seg.off, seg.len)
                             if (n > 0) progressed = true
                             pending -= n
