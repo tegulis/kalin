@@ -67,6 +67,10 @@ internal class Http1Exchange(
     var watching: Boolean = false
         private set
 
+    @Volatile
+    override var responseBodyBytes: Long = 0
+        private set
+
     private var body: BodyInput? = null
     private var continueSent = false
     private val disconnectCallbacks = CopyOnWriteArrayList<Runnable>()
@@ -153,7 +157,10 @@ internal class Http1Exchange(
     override fun send(body: ByteArray, offset: Int, length: Int) {
         val len = if (bodyAllowed()) length else 0
         writeHead(len.toLong())
-        if (len > 0 && !head.isHead) io.write(body, offset, len)
+        if (len > 0 && !head.isHead) {
+            io.write(body, offset, len)
+            responseBodyBytes = len.toLong()
+        }
         complete()
     }
 
@@ -190,13 +197,19 @@ internal class Http1Exchange(
 
     override fun sendFile(channel: FileChannel, position: Long, count: Long) {
         writeHead(count)
-        if (!head.isHead && bodyAllowed() && count > 0) io.writeFile(channel, position, count)
+        if (!head.isHead && bodyAllowed() && count > 0) {
+            io.writeFile(channel, position, count)
+            responseBodyBytes = count
+        }
         complete()
     }
 
     override fun sendFile(path: java.nio.file.Path, position: Long, count: Long) {
         writeHead(count)
-        if (!head.isHead && bodyAllowed() && count > 0) io.writeFile(path, position, count)
+        if (!head.isHead && bodyAllowed() && count > 0) {
+            io.writeFile(path, position, count)
+            responseBodyBytes = count
+        }
         complete()
     }
 
@@ -262,6 +275,7 @@ internal class Http1Exchange(
             io.write(sizeLine.buf, 0, sizeLine.len)
             io.write(b, off, len)
             io.write(CRLF, 0, 2)
+            responseBodyBytes += len
         }
 
         @Synchronized
@@ -295,6 +309,7 @@ internal class Http1Exchange(
             if (isDisconnected) throw IOException("Connection closed")
             io.write(b, off, len)
             written += len
+            responseBodyBytes += len
         }
 
         override fun flush() {
@@ -319,6 +334,7 @@ internal class Http1Exchange(
         override fun write(b: ByteArray, off: Int, len: Int) {
             if (closed) throw IOException("Stream closed")
             io.write(b, off, len)
+            responseBodyBytes += len
         }
 
         override fun flush() {

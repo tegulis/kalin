@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE configuration>
+
+<configuration>
+	<import class="ch.qos.logback.core.ConsoleAppender"/>
+	<import class="ch.qos.logback.classic.encoder.PatternLayoutEncoder"/>
+
+	<appender name="CONSOLE" class="ConsoleAppender">
+		<encoder class="PatternLayoutEncoder">
+			<pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{20} - %msg%n</pattern>
+		</encoder>
+	</appender>
+
+	<logger name="kalin-server.access" level="info"/>
+	<logger name="net.tegulis.kalin" level="info"/>
+
+	<root level="info">
+		<appender-ref ref="CONSOLE"/>
+	</root>
+</configuration>

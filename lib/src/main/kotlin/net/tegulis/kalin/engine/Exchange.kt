@@ -58,6 +58,9 @@ public interface Exchange {
     /** True once the response is complete. */
     public val isCompleted: Boolean
 
+    /** The number of response body bytes sent so far (excluding headers; 0 for HEAD responses). */
+    public val responseBodyBytes: Long
+
     /** Sends a complete response with a fixed-length body. */
     public fun send(body: ByteArray, offset: Int = 0, length: Int = body.size)
 
