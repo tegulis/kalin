@@ -238,7 +238,14 @@ internal class EpollSocket(
     private val ws = Native.Scratch(Arena.ofAuto())
     private var open = true
     override val edgeTriggered: Boolean = true
-    override val localAddress: InetSocketAddress? by lazy { if (open) Native.localAddress(s, fd) else null }
+
+    /** Read once on the loop thread: handler threads must not use the loop's scratch memory. */
+    override val localAddress: InetSocketAddress? =
+        try {
+            Native.localAddress(s, fd)
+        } catch (_: NativeException) {
+            null
+        }
 
     override fun read(b: ByteArray, off: Int, len: Int): Int = Native.read(s, fd, b, off, len)
 

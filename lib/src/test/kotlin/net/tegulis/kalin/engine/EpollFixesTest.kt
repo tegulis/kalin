@@ -50,6 +50,20 @@ class EpollFixesTest :
                 Files.delete(fileB)
             }
 
+            test("the local address of a connection is known without touching the socket later") {
+                val (listenFd, port) =
+                    Arena.ofConfined().use {
+                        val s = Native.Scratch(it)
+                        val fd = EpollEventLoop.listen(s, "127.0.0.1", 0, 16)
+                        fd to Native.localAddress(s, fd)!!.port
+                    }
+                val loop = EpollEventLoop("test-local", runtime(), -1)
+                val socket = EpollSocket(listenFd, loop, null)
+                socket.close()
+                // Handler threads may ask after the connection is gone; the address was taken on the loop thread
+                socket.localAddress?.port shouldBe port
+            }
+
             test("failing accepts pause the listener instead of spinning, then accepting resumes") {
                 val listenFd = Arena.ofConfined().use { EpollEventLoop.listen(Native.Scratch(it), "127.0.0.1", 0, 16) }
                 val loop = EpollEventLoop("test-accept", runtime(), listenFd)
