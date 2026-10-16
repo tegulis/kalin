@@ -37,7 +37,6 @@ val publishedModules =
 
 subprojects {
     repositories {
-        mavenLocal()
         mavenCentral()
     }
 
