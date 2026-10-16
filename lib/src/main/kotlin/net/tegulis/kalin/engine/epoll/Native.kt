@@ -31,6 +31,8 @@ internal object Errno {
     const val ENFILE = 23
     const val ECONNABORTED = 103
     const val EADDRINUSE = 98
+    const val ENOMEM = 12
+    const val ENOBUFS = 105
 
     fun name(errno: Int): String =
         when (errno) {
@@ -44,6 +46,8 @@ internal object Errno {
             ENFILE -> "ENFILE"
             ECONNABORTED -> "ECONNABORTED"
             EADDRINUSE -> "EADDRINUSE"
+            ENOMEM -> "ENOMEM"
+            ENOBUFS -> "ENOBUFS"
             else -> "?"
         }
 }

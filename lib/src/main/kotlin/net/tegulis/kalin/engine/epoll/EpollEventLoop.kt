@@ -30,6 +30,15 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
     private val connections = HashMap<Int, LoopConnection>()
     @Volatile private var accepting = true
 
+    /** Accepts one pending connection (replaceable in tests to simulate failures). */
+    internal var accept: (Int) -> Int = { fd -> Native.accept(scratch, fd, peer, peerLen) }
+
+    /** Set after accept failures (for example `EMFILE`) until an accept succeeds; one warning per episode. */
+    private var backingOff = false
+
+    /** While accepting is paused after a failure: when to watch the listening socket again (timer clock), else 0. */
+    private var acceptResumeAt = 0L
+
     init {
         Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, eventFd, Native.EPOLLIN, TAG_WAKEUP)
         if (listenFd >= 0) Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
@@ -40,6 +49,8 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
     }
 
     override fun poll(timeoutMs: Long) {
+        // The loop polls at least once per timer tick, so a paused listener is re-armed about on time
+        if (acceptResumeAt != 0L && timer.now >= acceptResumeAt) resumeAccepting()
         val n =
             Native.epollWait(scratch, epfd, events, maxEvents, timeoutMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         for (i in 0 until n) {
@@ -60,14 +71,15 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
     }
 
     private fun acceptAll() {
-        while (accepting) {
+        while (accepting && acceptResumeAt == 0L) {
             val fd =
                 try {
-                    Native.accept(scratch, listenFd, peer, peerLen)
+                    accept(listenFd)
                 } catch (e: NativeException) {
-                    ServerRuntime.log.log(System.Logger.Level.WARNING, "accept failed: ${e.message}")
+                    pauseAccepting(e)
                     return
                 }
+            backingOff = false
             if (fd < 0) return
             if (runtime.stopping || !runtime.tryOpen()) {
                 Native.close(scratch, fd)
@@ -78,6 +90,36 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
             nextPeer = (nextPeer + 1) % peers.size
             if (target === this) register(fd, remote) else target.execute { target.register(fd, remote) }
         }
+    }
+
+    /**
+     * The listening socket is level-triggered: after a failed accept (out of descriptors or memory) it would report
+     * readiness again immediately. Stop watching it for a moment instead of spinning.
+     */
+    private fun pauseAccepting(e: NativeException) {
+        if (!backingOff) {
+            backingOff = true
+            ServerRuntime.log.log(
+                System.Logger.Level.WARNING,
+                "accept failed: ${e.message}; pausing accepting for $ACCEPT_BACKOFF_MS ms at a time until it succeeds",
+            )
+        }
+        try {
+            Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_DEL, listenFd, 0, 0)
+        } catch (_: NativeException) {}
+        acceptResumeAt = timer.now + ACCEPT_BACKOFF_MS
+    }
+
+    private fun resumeAccepting() {
+        acceptResumeAt = 0L
+        if (!accepting) return
+        try {
+            Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
+        } catch (e: NativeException) {
+            pauseAccepting(e)
+            return
+        }
+        acceptAll()
     }
 
     /** The loops accepted connections are distributed to (round-robin), including this one. */
@@ -144,6 +186,7 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
     companion object {
         const val TAG_WAKEUP = -1L
         const val TAG_LISTEN = -2L
+        const val ACCEPT_BACKOFF_MS = 100L
         private val JAVA_LONG_UNALIGNED = JAVA_LONG.withByteAlignment(1)
 
         /** Creates a non-blocking listening socket with `SO_REUSEPORT`. */

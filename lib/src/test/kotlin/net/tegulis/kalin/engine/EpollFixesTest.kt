@@ -3,12 +3,17 @@ package net.tegulis.kalin.engine
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.lang.foreign.Arena
+import java.net.Socket
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import net.tegulis.kalin.config.ServerConfig
 import net.tegulis.kalin.engine.epoll.Epoll
 import net.tegulis.kalin.engine.epoll.EpollEventLoop
 import net.tegulis.kalin.engine.epoll.EpollSocket
+import net.tegulis.kalin.engine.epoll.Errno
 import net.tegulis.kalin.engine.epoll.Native
+import net.tegulis.kalin.engine.epoll.NativeException
 
 class EpollFixesTest :
     FunSpec({
@@ -43,6 +48,36 @@ class EpollFixesTest :
                 }
                 Files.delete(fileA)
                 Files.delete(fileB)
+            }
+
+            test("failing accepts pause the listener instead of spinning, then accepting resumes") {
+                val listenFd = Arena.ofConfined().use { EpollEventLoop.listen(Native.Scratch(it), "127.0.0.1", 0, 16) }
+                val loop = EpollEventLoop("test-accept", runtime(), listenFd)
+                val port = loop.localAddress!!.port
+                val failing = AtomicBoolean(true)
+                val attempts = AtomicInteger()
+                val accepted = AtomicInteger()
+                val realAccept = loop.accept
+                loop.accept = { fd ->
+                    attempts.incrementAndGet()
+                    if (failing.get()) throw NativeException("accept4", Errno.EMFILE)
+                    realAccept(fd).also { if (it >= 0) accepted.incrementAndGet() }
+                }
+                loop.start()
+                try {
+                    Socket("127.0.0.1", port).use {
+                        Thread.sleep(1000)
+                        // About one retry per backoff period; a level-triggered spin would make millions
+                        (attempts.get() in 2..30) shouldBe true
+                        failing.set(false)
+                        val deadline = System.nanoTime() + 5_000_000_000
+                        while (accepted.get() == 0 && System.nanoTime() < deadline) Thread.sleep(10)
+                        accepted.get() shouldBe 1
+                    }
+                } finally {
+                    loop.shutdown()
+                    loop.thread.join(2000)
+                }
             }
         }
     })
