@@ -495,9 +495,9 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
                     val cause = if (error is java.util.concurrent.CompletionException) error.cause ?: error else error
                     if (cause is TimeoutException && timeout > 0 && !future.isDone) {
                         future.cancel(true)
+                        // The error mappers run once from the queued error task
                         status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        state.router.errorMapper.handle(statusCode(), this)
-                        if (result == null) result("Request timed out")
+                        result("Request timed out")
                     } else {
                         exceptionOccurred = true
                         tasks.addFirst(Task(false) { state.router.exceptionMapper.handle(this, cause) })
