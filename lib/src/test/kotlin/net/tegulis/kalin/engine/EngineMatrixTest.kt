@@ -242,3 +242,30 @@ class IdleStreamTest :
             }
         }
     })
+
+class ActiveCountTest :
+    FunSpec({
+        for (execution in HandlerExecution.entries) {
+            test("the active exchange count returns to zero after pipelined requests ($execution)") {
+                val app = Kalin.create {
+                    it.startup.showBanner = false
+                    it.server.port = 0
+                    it.server.engine = Engine.EVENT_LOOP
+                    it.server.handlerExecution = execution
+                    it.server.eventLoops = 1
+                    it.server.shutdownTimeout = 30.seconds
+                    it.routes.get("/") { ctx -> ctx.result("x") }
+                }
+                app.start()
+                java.net.Socket("127.0.0.1", app.port()).use { s ->
+                    s.getOutputStream().write("GET / HTTP/1.1\r\nHost: x\r\n\r\n".repeat(50).toByteArray())
+                    s.soTimeout = 5000
+                    val input = java.io.BufferedInputStream(s.getInputStream())
+                    repeat(50) { readResponseBody(input) }
+                }
+                val start = System.nanoTime()
+                app.stop()
+                ((System.nanoTime() - start) / 1_000_000 < 5_000) shouldBe true
+            }
+        }
+    })

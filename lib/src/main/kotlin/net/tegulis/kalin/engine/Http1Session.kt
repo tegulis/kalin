@@ -100,21 +100,25 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
             current = exchange
             runtime.activeExchanges.incrementAndGet()
             runtime.totalRequests.incrementAndGet()
+            // The exchange counts as active until its response was written, so stop() waits for it
+            var active = true
             try {
                 dispatch(exchange)
+                if (exchange.watching) return
+                if (!exchange.closeAfter && head.hasBody && !finishRequestBody(exchange))
+                    exchange.closeConnectionAfterResponse()
+                current = null
+                if (exchange.closeAfter || runtime.stopping) {
+                    flushOut()
+                    runtime.activeExchanges.decrementAndGet()
+                    active = false
+                    lingeringClose(head.hasBody)
+                    return
+                }
+                if (inPos == inLimit) flushOut() // nothing pipelined: send now; else batch with the next responses
             } finally {
-                runtime.activeExchanges.decrementAndGet()
+                if (active) runtime.activeExchanges.decrementAndGet()
             }
-            if (exchange.watching) return
-            if (!exchange.closeAfter && head.hasBody && !finishRequestBody(exchange))
-                exchange.closeConnectionAfterResponse()
-            current = null
-            if (exchange.closeAfter || runtime.stopping) {
-                flushOut()
-                lingeringClose(head.hasBody)
-                return
-            }
-            if (inPos == inLimit) flushOut() // nothing pipelined: send now; else batch with the next responses
         }
     }
 

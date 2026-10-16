@@ -244,7 +244,8 @@ internal class LoopConnection(
         head = h
         val exchange = Http1Exchange(h, this, runtime.serverHeader)
         current = exchange
-        counted.set(exchange)
+        // The previous (completed) exchange may still be counted while its response waits in a pipelined batch
+        if (counted.getAndSet(exchange) != null) runtime.activeExchanges.decrementAndGet()
         runtime.activeExchanges.incrementAndGet()
         runtime.totalRequests.incrementAndGet()
         bodyRemaining = if (h.chunked) -1 else maxOf(0, h.contentLength)
@@ -392,7 +393,6 @@ internal class LoopConnection(
     // ---- exchange completion -----------------------------------------------------------------------------
 
     override fun exchangeCompleted(exchange: Http1Exchange) {
-        uncount(exchange)
         if (loop.inLoop) {
             onExchangeComplete(exchange)
             return
@@ -435,7 +435,14 @@ internal class LoopConnection(
         // A blocked write gets a deadline (the loop finishes it); a completed one leaves no deadline behind, so an
         // idle stream (SSE) is not closed by a stale write timeout.
         if (!done) timeout.after(runtime.writeTimeoutMs) else if (pipe == null) timeout.clear()
+        if (done) uncountIfWritten()
         return done
+    }
+
+    /** An exchange stops counting as active (for graceful stop) once its response is complete and written. */
+    private fun uncountIfWritten() {
+        val ex = counted.get() ?: return
+        if (ex.isCompleted && out.isEmpty) uncount(ex)
     }
 
     private fun onExchangeComplete(exchange: Http1Exchange) {
@@ -511,6 +518,7 @@ internal class LoopConnection(
                 return
             }
         if (done) {
+            uncountIfWritten()
             if (writeInterest) {
                 writeInterest = false
                 socket.setWriteInterest(false)
