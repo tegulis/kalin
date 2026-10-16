@@ -16,6 +16,7 @@ import java.time.format.DateTimeFormatter
 import net.tegulis.kalin.compression.CompressionType
 import net.tegulis.kalin.http.Context
 import net.tegulis.kalin.http.Handler
+import net.tegulis.kalin.http.HandlerType
 import net.tegulis.kalin.http.Header
 import net.tegulis.kalin.http.HttpStatus
 import net.tegulis.kalin.http.KalinContext
@@ -250,13 +251,13 @@ internal class StaticLocation(val config: StaticFileConfig) {
             }
         }
         ctx.header(Header.ACCEPT_RANGES, "bytes")
-        val range = ctx.header(Header.RANGE)
+        // RFC 9110 §14.2: Range applies to GET only
+        val range = if (ctx.method() == HandlerType.GET) ctx.header(Header.RANGE) else null
         // Partial responses are never compressed, so If-Range is checked against the identity tag
         if (range != null && ifRangeMatches(ctx, identityTag, resource.lastModified)) {
-            val parsed = parseRange(range, resource.size)
-            when {
-                parsed == null -> {} // invalid or multiple ranges: serve the full resource
-                parsed.first < 0 -> {
+            when (val parsed = parseRange(range, resource.size)) {
+                null -> {} // invalid or several satisfiable ranges: serve the full resource
+                UNSATISFIABLE -> {
                     ctx.header(Header.CONTENT_RANGE, "bytes */${resource.size}")
                     ctx.status(HttpStatus.RANGE_NOT_SATISFIABLE)
                     ctx.removeHeader(Header.CONTENT_TYPE)
@@ -331,29 +332,55 @@ internal class StaticLocation(val config: StaticFileConfig) {
         return lastModified / 1000 == date / 1000
     }
 
-    /** Parses a single byte range. Returns null to ignore the header, (-1, -1) if unsatisfiable. */
+    /**
+     * Parses a `Range` header (RFC 9110 §14.1.2). Returns the single satisfiable range (end clamped to the last byte),
+     * [UNSATISFIABLE] if no range is satisfiable, or null to ignore the header: syntactically invalid (including `last
+     * < first` and other units) or, like nginx without multipart support, more than one satisfiable range.
+     */
     private fun parseRange(header: String, size: Long): Pair<Long, Long>? {
-        if (!header.startsWith("bytes=", ignoreCase = true)) return null
-        val spec = header.substring(6).trim()
-        if (spec.contains(',')) return null
-        val dash = spec.indexOf('-')
-        if (dash < 0) return null
-        val a = spec.substring(0, dash).trim()
-        val b = spec.substring(dash + 1).trim()
-        return try {
-            if (a.isEmpty()) {
-                val suffix = b.toLong()
-                if (suffix <= 0) return -1L to -1L
-                if (size == 0L) return -1L to -1L
-                maxOf(0, size - suffix) to size - 1
+        val eq = header.indexOf('=')
+        if (eq < 0 || !header.substring(0, eq).equals("bytes", ignoreCase = true)) return null
+        val satisfiable = ArrayList<Pair<Long, Long>>(1)
+        var specs = 0
+        for (element in header.substring(eq + 1).split(',')) {
+            val spec = element.trim(' ', '\t')
+            if (spec.isEmpty()) continue // empty list elements are allowed (RFC 9110 §5.6.1)
+            specs++
+            val dash = spec.indexOf('-')
+            if (dash < 0) return null
+            val first = spec.substring(0, dash)
+            val last = spec.substring(dash + 1)
+            if (first.isEmpty()) {
+                val suffix = digits(last) ?: return null
+                if (suffix > 0 && size > 0) satisfiable.add(maxOf(0, size - suffix) to size - 1)
             } else {
-                val start = a.toLong()
-                val end = if (b.isEmpty()) size - 1 else minOf(b.toLong(), size - 1)
-                if (start >= size || start > end) -1L to -1L else start to end
+                val start = digits(first) ?: return null
+                val end = if (last.isEmpty()) Long.MAX_VALUE else digits(last) ?: return null
+                if (end < start) return null
+                if (start < size) satisfiable.add(start to minOf(end, size - 1))
             }
-        } catch (_: NumberFormatException) {
-            null
         }
+        return when {
+            specs == 0 -> null
+            satisfiable.isEmpty() -> UNSATISFIABLE
+            satisfiable.size == 1 -> satisfiable[0]
+            else -> null
+        }
+    }
+
+    /** Parses `1*DIGIT`, saturating at [Long.MAX_VALUE]; null if [s] is not all ASCII digits. */
+    private fun digits(s: String): Long? {
+        if (s.isEmpty()) return null
+        var value = 0L
+        for (c in s) {
+            if (c !in '0'..'9') return null
+            value = if (value > (Long.MAX_VALUE - (c - '0')) / 10) Long.MAX_VALUE else value * 10 + (c - '0')
+        }
+        return value
+    }
+
+    private companion object {
+        val UNSATISFIABLE: Pair<Long, Long> = -1L to -1L
     }
 }
 

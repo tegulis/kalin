@@ -135,6 +135,56 @@ class StaticFilesTest :
             }
         }
 
+        test("range requests follow RFC 9110") {
+            testKalin {
+                app { staticFiles.add(root.absolutePath, Location.EXTERNAL) }
+                fun range(value: String, head: Boolean = false) =
+                    if (head) client.head("/data.bin") { header("Range", value) }
+                    else client.get("/data.bin") { header("Range", value) }
+                // Syntactically invalid: ignored
+                for (invalid in
+                    listOf("bytes=5-3", "bytes=abc", "bytes=1-x", "bytes=+1-2", "bytes=", "items=0-1", "0-1")) {
+                    range(invalid).let {
+                        it.code shouldBe 200
+                        it.header("Content-Range") shouldBe null
+                        it.bodyAsBytes().size shouldBe 10_000
+                    }
+                }
+                range("bytes=0-1, 5-3").code shouldBe 200
+                // Satisfiable
+                range("BYTES=5-5").let {
+                    it.code shouldBe 206
+                    it.header("Content-Range") shouldBe "bytes 5-5/10000"
+                }
+                range("bytes=9990-99999").header("Content-Range") shouldBe "bytes 9990-9999/10000"
+                range("bytes=9990-99999999999999999999999").header("Content-Range") shouldBe "bytes 9990-9999/10000"
+                range("bytes=-20000").let {
+                    it.code shouldBe 206
+                    it.header("Content-Range") shouldBe "bytes 0-9999/10000"
+                    it.bodyAsBytes().size shouldBe 10_000
+                }
+                range("bytes=-3").header("Content-Range") shouldBe "bytes 9997-9999/10000"
+                range("bytes=20000-, 2-3").header("Content-Range") shouldBe "bytes 2-3/10000"
+                // Unsatisfiable
+                for (unsatisfiable in listOf("bytes=10000-", "bytes=10000-10005", "bytes=-0", "bytes=20000-,-0")) {
+                    range(unsatisfiable).let {
+                        it.code shouldBe 416
+                        it.header("Content-Range") shouldBe "bytes */10000"
+                    }
+                }
+                // Several satisfiable ranges: the full resource
+                range("bytes=0-1,5-6").let {
+                    it.code shouldBe 200
+                    it.bodyAsBytes().size shouldBe 10_000
+                }
+                // Not for HEAD
+                range("bytes=0-1", head = true).let {
+                    it.code shouldBe 200
+                    it.header("Content-Range") shouldBe null
+                }
+            }
+        }
+
         test("compression of static files and precompressed variants") {
             testKalin {
                 app {
