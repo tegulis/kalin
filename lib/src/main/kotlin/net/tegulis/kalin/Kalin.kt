@@ -184,6 +184,13 @@ public class Kalin private constructor(private val cfg: KalinConfig) {
         public fun create(config: Consumer<KalinConfig>): Kalin {
             val cfg = KalinConfig()
             config.accept(cfg)
+            if (
+                cfg.server.engine == Engine.EVENT_LOOP &&
+                    (cfg.server.transport == Transport.AUTO || cfg.server.transport == Transport.EPOLL)
+            ) {
+                // Linking the native epoll bindings takes tens of milliseconds; overlap it with the rest of startup
+                Thread.ofPlatform().daemon().name("kalin-epoll-init").start { Epoll.available() }
+            }
             initializePlugins(cfg)
             return Kalin(cfg)
         }
