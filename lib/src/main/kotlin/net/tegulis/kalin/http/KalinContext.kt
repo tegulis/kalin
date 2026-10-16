@@ -67,10 +67,16 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
     private var httpHandler: ParsedEndpoint? = null
     private var willMatchState = 0
 
+    /** True if the request path is below the context path. */
+    internal val inContextPath: Boolean =
+        state.contextPath.isEmpty() ||
+            exchange.path == state.contextPath ||
+            exchange.path.startsWith(state.contextPath + "/")
+
     internal val requestUri: String =
         exchange.path.let { p ->
             val cp = state.contextPath
-            if (cp.isEmpty()) p else if (p.startsWith(cp)) p.substring(cp.length).ifEmpty { "/" } else p
+            if (cp.isEmpty() || !inContextPath) p else p.substring(cp.length).ifEmpty { "/" }
         }
 
     internal fun requestUri(): String = requestUri

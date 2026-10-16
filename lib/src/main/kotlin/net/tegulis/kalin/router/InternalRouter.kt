@@ -115,6 +115,12 @@ internal class InternalRouter(private val routerConfig: RouterConfig) {
 internal class ExceptionMapper {
     val handlers = LinkedHashMap<Class<out Exception>, ExceptionHandler<Exception>>()
 
+    init {
+        handlers[HttpResponseException::class.java] = ExceptionHandler { e, ctx ->
+            HttpResponseExceptionMapper.handle(e as HttpResponseException, ctx)
+        }
+    }
+
     private fun find(type: Class<*>): ExceptionHandler<Exception>? {
         var c: Class<*>? = type
         while (c != null && c != Any::class.java) {

@@ -435,3 +435,24 @@ public fun query(path: String, handler: Handler): Unit = ApiBuilder.query(path, 
 
 /** SSE endpoint relative to the current [path]. */
 public fun sse(path: String, client: Consumer<SseClient>): Unit = ApiBuilder.sse(path, client)
+
+/** GET endpoint at the current [path]. */
+public fun get(handler: Handler): Unit = ApiBuilder.get(handler)
+
+/** POST endpoint at the current [path]. */
+public fun post(handler: Handler): Unit = ApiBuilder.post(handler)
+
+/** PUT endpoint at the current [path]. */
+public fun put(handler: Handler): Unit = ApiBuilder.put(handler)
+
+/** PATCH endpoint at the current [path]. */
+public fun patch(handler: Handler): Unit = ApiBuilder.patch(handler)
+
+/** DELETE endpoint at the current [path]. */
+public fun delete(handler: Handler): Unit = ApiBuilder.delete(handler)
+
+/** HEAD endpoint at the current [path]. */
+public fun head(handler: Handler): Unit = ApiBuilder.head(handler)
+
+/** SSE endpoint at the current [path]. */
+public fun sse(client: Consumer<SseClient>): Unit = ApiBuilder.sse(client)

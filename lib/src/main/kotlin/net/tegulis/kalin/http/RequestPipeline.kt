@@ -33,6 +33,10 @@ internal class RequestPipeline(private val state: KalinState) : ExchangeHandler 
         val router = state.router
         val uri = ctx.requestUri
         val tasks = ctx.tasks
+        if (!ctx.inContextPath) {
+            tasks.add(Task(true) { throw NotFoundResponse() })
+            return
+        }
         if (state.hasBefore) {
             for (entry in router.findAll(HandlerType.BEFORE, uri)) tasks.add(Task(true) { entry.handle(ctx, uri) })
         }

@@ -4,7 +4,21 @@ import java.net.URLDecoder
 import net.tegulis.kalin.config.RouterConfig
 
 /** Thrown for invalid path patterns. */
-public class InvalidPathException(message: String) : IllegalArgumentException(message)
+public open class InvalidPathException(message: String) : IllegalArgumentException(message)
+
+/** A path segment has unbalanced `{}` or `<>` brackets. */
+public class MissingBracketsException(segment: String, public val path: String) :
+    InvalidPathException("This segment '$segment' is missing some brackets! Found in path '$path'")
+
+/** A wildcard directly touches a path parameter bracket, which is ambiguous. */
+public class WildcardBracketAdjacentException(segment: String, public val path: String) :
+    InvalidPathException(
+        "Wildcard and a path parameter bracket are adjacent in segment '$segment' of path '$path'. This is forbidden"
+    )
+
+/** The same path parameter name is used twice. */
+public class ParameterNamesNotUniqueException(public val path: String) :
+    InvalidPathException("Duplicate path param names detected! This is forbidden. Found in path '$path'")
 
 /**
  * Matches request paths against a Javalin-style path pattern:
@@ -24,6 +38,14 @@ internal class PathMatcher(val rawPath: String, private val config: RouterConfig
         data object Wildcard : Part
     }
 
+    init {
+        if (rawPath.contains("/:")) {
+            throw InvalidPathException(
+                "Path '$rawPath' invalid - Kalin (like Javalin 4+) uses '{param}' instead of ':param'."
+            )
+        }
+    }
+
     private val matchEverySubPath = rawPath.endsWith(">*") || rawPath.endsWith("}*")
     private val path = if (matchEverySubPath) rawPath.removeSuffix("*") else rawPath
     private val segments: List<List<Part>> = path.split('/').filter { it.isNotEmpty() }.map { parseSegment(it) }
@@ -33,10 +55,7 @@ internal class PathMatcher(val rawPath: String, private val config: RouterConfig
             .flatten()
             .filterIsInstance<Part.Param>()
             .map { it.name }
-            .also { names ->
-                if (names.toSet().size != names.size)
-                    throw InvalidPathException("Duplicate path param names in '$rawPath'")
-            }
+            .also { names -> if (names.toSet().size != names.size) throw ParameterNamesNotUniqueException(rawPath) }
 
     /** True if the pattern has no parameters or wildcards. */
     val isStatic: Boolean = !matchEverySubPath && segments.all { seg -> seg.all { it is Part.Literal } }
@@ -110,20 +129,22 @@ internal class PathMatcher(val rawPath: String, private val config: RouterConfig
                 '<' -> {
                     val close = if (c == '{') '}' else '>'
                     val end = segment.indexOf(close, i + 1)
-                    if (end < 0) throw InvalidPathException("Missing '$close' in '$rawPath'")
+                    if (end < 0) throw MissingBracketsException(segment, rawPath)
                     val name = segment.substring(i + 1, end)
-                    if (name.isEmpty() || name.any { it in "{}<>/*" })
-                        throw InvalidPathException("Invalid path param name '$name' in '$rawPath'")
+                    if (name.isEmpty() || name.any { it in "{}<>/" }) throw MissingBracketsException(segment, rawPath)
                     flush()
                     if (parts.lastOrNull() is Part.Param)
                         throw InvalidPathException("Adjacent path params without delimiter in '$rawPath'")
+                    if (parts.lastOrNull() == Part.Wildcard) throw WildcardBracketAdjacentException(segment, rawPath)
                     parts.add(Part.Param(name, slashes = c == '<'))
                     i = end + 1
                 }
                 '}',
-                '>' -> throw InvalidPathException("Unexpected '$c' in '$rawPath'")
+                '>' -> throw MissingBracketsException(segment, rawPath)
                 '*' -> {
                     flush()
+                    if (parts.lastOrNull() is Part.Param && !(matchEverySubPath && i == segment.length - 1))
+                        throw WildcardBracketAdjacentException(segment, rawPath)
                     parts.add(Part.Wildcard)
                     i++
                 }
@@ -153,7 +174,7 @@ internal class PathMatcher(val rawPath: String, private val config: RouterConfig
             return try {
                 URLDecoder.decode(s.replace("+", "%2B"), Charsets.UTF_8)
             } catch (_: IllegalArgumentException) {
-                s
+                throw net.tegulis.kalin.http.BadRequestResponse()
             }
         }
     }

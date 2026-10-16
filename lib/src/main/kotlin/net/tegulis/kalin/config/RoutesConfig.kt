@@ -33,10 +33,16 @@ public class RoutesConfig internal constructor(private val config: KalinConfig) 
     public fun addEndpoint(endpoint: Endpoint): RoutesConfig = apply {
         checkOpen()
         val scoped = ApiBuilder.scope(this, endpoint)
-        endpoints.add(Endpoint(scoped.method, normalize(scoped.path), scoped.handler, scoped.metadata().toSet()))
+        val path = normalize(scoped.path)
+        net.tegulis.kalin.router.PathMatcher(path, config.router) // validates the pattern early
+        endpoints.add(Endpoint(scoped.method, path, scoped.handler, scoped.metadata().toSet()))
     }
 
     /** Adds a handler for any [handlerType] (also custom methods from [HandlerType.findOrCreate]). */
+    public fun addHttpHandler(handlerType: HandlerType, path: String, handler: Handler): RoutesConfig =
+        addEndpoint(Endpoint(handlerType, path, handler))
+
+    /** Adds a handler for any [handlerType] with roles. */
     public fun addHttpHandler(
         handlerType: HandlerType,
         path: String,
