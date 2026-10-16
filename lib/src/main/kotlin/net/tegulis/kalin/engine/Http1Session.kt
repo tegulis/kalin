@@ -248,8 +248,10 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
         if (current?.isCommitted == true) return
         try {
             val bytes = Http1Exchange.errorResponse(status, message)
-            outLen = 0
-            io.write(bytes, 0, bytes.size)
+            synchronized(writeLock) {
+                flushOut() // responses to earlier pipelined requests go first
+                timedWrite(bytes, 0, bytes.size)
+            }
             lingeringClose(true)
         } catch (_: IOException) {}
     }

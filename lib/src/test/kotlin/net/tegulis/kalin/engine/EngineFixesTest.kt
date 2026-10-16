@@ -67,4 +67,14 @@ class EngineFixesTest :
                 partial.response.bodyAsText() shouldBe "root"
             }
         }
+
+        test("a malformed pipelined request does not discard earlier responses") {
+            testKalin {
+                app { routes.get("/") { it.result("root") } }
+                val r = client.raw("GET / HTTP/1.1\r\nHost: x\r\n\r\n".repeat(2) + "BAD\r\n\r\n", responses = 3)
+                r.responses.map { it.code } shouldBe listOf(200, 200, 400)
+                r.responses[1].bodyAsText() shouldBe "root"
+                r.closedByServer shouldBe true
+            }
+        }
     })
