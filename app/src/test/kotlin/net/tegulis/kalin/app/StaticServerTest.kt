@@ -72,6 +72,23 @@ class StaticServerTest :
             ServerOptions.parse(arrayOf("-b", "0.0.0.0")).host shouldBe "0.0.0.0"
         }
 
+        test("basic auth credentials from a flag, a file or the environment") {
+            val file = File(tempdir(), "auth").apply { writeText("file:pw:x\r\n") }
+            val noEnv = emptyMap<String, String>()
+            ServerOptions.parse(arrayOf("--basic-auth", "a:b"), noEnv).basicAuth shouldBe ("a" to "b")
+            ServerOptions.parse(arrayOf("--basic-auth-file", file.path), noEnv).basicAuth shouldBe ("file" to "pw:x")
+            ServerOptions.parse(emptyArray(), mapOf("KALIN_BASIC_AUTH" to "env:pw")).basicAuth shouldBe ("env" to "pw")
+            ServerOptions.parse(emptyArray(), noEnv).basicAuth shouldBe null
+            shouldThrow<UsageException> {
+                ServerOptions.parse(arrayOf("--basic-auth", "a:b", "--basic-auth-file", file.path), noEnv)
+            }
+            shouldThrow<UsageException> {
+                ServerOptions.parse(arrayOf("--basic-auth", "a:b"), mapOf("KALIN_BASIC_AUTH" to "env:pw"))
+            }
+            shouldThrow<UsageException> { ServerOptions.parse(arrayOf("--basic-auth-file", "/does/not/exist"), noEnv) }
+            shouldThrow<UsageException> { ServerOptions.parse(emptyArray(), mapOf("KALIN_BASIC_AUTH" to "nocolon")) }
+        }
+
         test("serves files, index pages, listings and hides dotfiles") {
             testKalin {
                 app { staticServer(ServerOptions(directory = root.toPath(), accessLog = false)) }

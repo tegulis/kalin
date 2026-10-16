@@ -406,12 +406,17 @@ Usage: kalin-server [options] [directory]
       --precompressed         Serve file.gz instead of file when the client accepts gzip
       --cors                  Allow cross-origin requests from any origin
       --basic-auth <user:pw>  Require HTTP basic authentication
+      --basic-auth-file <f>   Read user:pw for basic authentication from a file
   -H, --header <name:value>   Add a response header (repeatable)
       --proxy-headers         Trust X-Forwarded-* and Forwarded headers
       --engine / --transport  LOOM | EVENT_LOOP, AUTO | NIO | EPOLL
   -q, --quiet                 No access log (Common Log Format by default)
       --log-format <f>        text or json
 ```
+
+Basic authentication credentials come from exactly one of `--basic-auth user:pw`, `--basic-auth-file <file>` (the
+file holds `user:pw`; a trailing newline is ignored) or the environment variable `KALIN_BASIC_AUTH=user:pw`. A
+command line value is visible to other local users through `ps` and `/proc`, so prefer the file or the environment.
 
 `./gradlew :app:packZip` builds a distributable zip.
 

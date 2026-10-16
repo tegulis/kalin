@@ -67,7 +67,10 @@ data class ServerOptions(
             |      --no-gzip               Disable response compression
             |      --precompressed         Serve file.gz instead of file when the client accepts gzip
             |      --cors                  Allow cross-origin requests from any origin
-            |      --basic-auth <user:pw>  Require HTTP basic authentication
+            |      --basic-auth <user:pw>  Require HTTP basic authentication (the value is visible to
+            |                              other local users through ps and /proc; prefer one below)
+            |      --basic-auth-file <f>   Read user:pw for basic authentication from a file
+            |                              (environment: KALIN_BASIC_AUTH=user:pw; use one source only)
             |  -H, --header <name:value>   Add a response header (repeatable)
             |      --proxy-headers         Trust X-Forwarded-For/-Proto/-Host and Forwarded headers
             |      --max-connections <n>   Limit open connections (default: unlimited)
@@ -82,9 +85,13 @@ data class ServerOptions(
             """
                 .trimMargin()
 
-        /** Parses command line arguments. */
-        fun parse(args: Array<String>): ServerOptions {
+        /** The environment variable holding `user:password` for basic authentication. */
+        const val BASIC_AUTH_ENV: String = "KALIN_BASIC_AUTH"
+
+        /** Parses command line arguments; [env] is the process environment (for [BASIC_AUTH_ENV]). */
+        fun parse(args: Array<String>, env: Map<String, String> = System.getenv()): ServerOptions {
             var o = ServerOptions()
+            val authSources = ArrayList<String>()
             var directorySet = false
             val headers = LinkedHashMap<String, String>()
             var i = 0
@@ -130,10 +137,19 @@ data class ServerOptions(
                     "--precompressed" -> o = o.copy(precompressed = true)
                     "--cors" -> o = o.copy(cors = true)
                     "--basic-auth" -> {
-                        val text = v()
-                        val colon = text.indexOf(':')
-                        if (colon <= 0) throw UsageException("--basic-auth expects user:password")
-                        o = o.copy(basicAuth = text.substring(0, colon) to text.substring(colon + 1))
+                        o = o.copy(basicAuth = credentials(arg, v()))
+                        authSources.add(arg)
+                    }
+                    "--basic-auth-file" -> {
+                        val file = v()
+                        val text =
+                            try {
+                                Files.readString(Path.of(file)).trimEnd('\r', '\n')
+                            } catch (e: Exception) {
+                                throw UsageException("Cannot read --basic-auth-file $file: ${e.message}")
+                            }
+                        o = o.copy(basicAuth = credentials(arg, text))
+                        authSources.add(arg)
                     }
                     "-H",
                     "--header" -> {
@@ -164,7 +180,20 @@ data class ServerOptions(
                 }
                 i++
             }
+            env[BASIC_AUTH_ENV]?.let {
+                o = o.copy(basicAuth = credentials(BASIC_AUTH_ENV, it))
+                authSources.add(BASIC_AUTH_ENV)
+            }
+            if (authSources.size > 1) {
+                throw UsageException("Basic authentication given more than once: ${authSources.joinToString()}")
+            }
             return o.copy(headers = headers)
+        }
+
+        private fun credentials(source: String, text: String): Pair<String, String> {
+            val colon = text.indexOf(':')
+            if (colon <= 0) throw UsageException("$source expects user:password")
+            return text.substring(0, colon) to text.substring(colon + 1)
         }
 
         private inline fun <reified E : Enum<E>> enumValue(name: String, text: String): E =
