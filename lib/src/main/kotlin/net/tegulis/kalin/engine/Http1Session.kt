@@ -65,6 +65,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
         private set
 
     @Volatile private var current: Http1Exchange? = null
+    private var drainDeadline = 0L
     private var completed: CountDownLatch? = null
 
     override fun run() {
@@ -149,17 +150,30 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
         return drainWithTimeout(body)
     }
 
+    /** Drains within one request timeout overall; the per-read body timeouts cannot extend it. */
     private fun drainWithTimeout(body: BodyInput): Boolean =
         try {
-            timeout.after(runtime.requestTimeoutMs)
+            if (runtime.requestTimeoutMs > 0) drainDeadline = TimerWheel.nowMillis() + runtime.requestTimeoutMs
             body.drain(runtime.config.drainLimit)
         } catch (_: IOException) {
             false
         } catch (_: HttpParseException) {
             false
         } finally {
+            drainDeadline = 0
             timeout.clear()
         }
+
+    /** Arms the timeout for one blocking body read; while draining, never past the drain deadline. */
+    private fun armBodyReadTimeout() {
+        var ms = runtime.requestTimeoutMs
+        if (drainDeadline != 0L) {
+            val left = drainDeadline - TimerWheel.nowMillis()
+            if (left <= 0) throw IOException("Request body drain timed out")
+            if (ms <= 0 || left < ms) ms = left
+        }
+        timeout.after(ms)
+    }
 
     /** Half-closes and discards input for a short while so the client receives the response instead of a reset. */
     private fun lingeringClose(unreadInput: Boolean) {
@@ -177,12 +191,15 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
         } catch (_: IOException) {}
     }
 
-    /** Reads the next request head; returns null when the client closed the connection between requests. */
-    private var headDeadlineSet = false
-
+    /**
+     * Reads the next request head; returns null when the client closed the connection between requests. The idle
+     * deadline is armed once: empty lines before a request do not extend it. The first other byte starts the request
+     * timeout for the whole head (slowloris protection).
+     */
     private fun readHead(): RequestHead? {
         parser.reset()
-        headDeadlineSet = false
+        var idleDeadlineSet = false
+        var headDeadlineSet = false
         while (true) {
             if (inPos < inLimit) {
                 inPos += parser.skipLeadingEmptyLines(inBuf, inPos, inLimit)
@@ -207,15 +224,14 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                 inPos = 0
                 inLimit = 0
                 parser.reset()
-                idle = true
-                headDeadlineSet = false
-                if (runtime.stopping) return null
-                timeout.after(runtime.idleTimeoutMs)
-            } else if (!headDeadlineSet) {
-                // The whole head must arrive within the request timeout (slowloris protection)
-                idle = false
-                headDeadlineSet = true
-                timeout.after(runtime.requestTimeoutMs)
+                if (!headDeadlineSet) {
+                    idle = true
+                    if (runtime.stopping) return null
+                    if (!idleDeadlineSet) {
+                        idleDeadlineSet = true
+                        timeout.after(runtime.idleTimeoutMs)
+                    }
+                }
             }
             val n = fill()
             if (n < 0) {
@@ -379,7 +395,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                 inPos += n
             } else {
                 flush()
-                timeout.after(runtime.requestTimeoutMs)
+                armBodyReadTimeout()
                 try {
                     n = io.read(b, off, want)
                 } finally {
@@ -439,7 +455,7 @@ internal class Http1Session(private val io: BlockingIo, private val runtime: Ser
                     flush()
                     inPos = 0
                     inLimit = 0
-                    timeout.after(runtime.requestTimeoutMs)
+                    armBodyReadTimeout()
                     val n =
                         try {
                             io.read(inBuf, 0, inBuf.size)
