@@ -5,9 +5,12 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.engine.spec.tempdir
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import java.io.File
 import java.nio.file.Path
 import java.util.Base64
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 import net.tegulis.kalin.engine.Engine
 import net.tegulis.kalin.testtools.testKalin
@@ -121,6 +124,36 @@ class StaticServerTest :
                     }
                     .bodyAsText() shouldBe "<div id=app></div>"
                 client.get("/docs/readme.txt") { header("Authorization", auth) }.code shouldBe 404
+            }
+        }
+
+        test("access log escapes client values and logs only authenticated users") {
+            logEscape("plain /ä") shouldBe "plain /ä"
+            logEscape("a\"b\\c\r\nd\u0000\u007f\u0085\u2028") shouldBe "a\\x22b\\x5Cc\\x0D\\x0Ad\\x00\\x7F\\x85\\u2028"
+            val lines = LinkedBlockingQueue<String>()
+            testKalin {
+                app {
+                    staticServer(
+                        ServerOptions(directory = root.toPath(), basicAuth = "user" to "pw"),
+                        accessLogSink = { lines.add(it) },
+                    )
+                }
+                fun basic(credentials: String) =
+                    "Basic " + Base64.getEncoder().encodeToString(credentials.toByteArray())
+                client
+                    .get("/") {
+                        header("Authorization", basic("evil\r\n127.0.0.1 - admin:x"))
+                        header("User-Agent", "agent\" \"\tx\\")
+                        header("Referer", "https://r/\"q")
+                    }
+                    .code shouldBe 401
+                lines.poll(5, TimeUnit.SECONDS)!!.let {
+                    it shouldContain " - - ["
+                    it shouldContain "\"https://r/\\x22q\" \"agent\\x22 \\x22\\x09x\\x5C\""
+                    it shouldNotContain "evil"
+                }
+                client.get("/") { header("Authorization", basic("user:pw")) }.code shouldBe 200
+                lines.poll(5, TimeUnit.SECONDS)!! shouldContain " - user ["
             }
         }
     })

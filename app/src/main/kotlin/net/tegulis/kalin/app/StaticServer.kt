@@ -2,6 +2,7 @@ package net.tegulis.kalin.app
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -15,8 +16,11 @@ import net.tegulis.kalin.staticfiles.Location
 private val accessLog = KotlinLogging.logger("kalin-server.access")
 private val clfDate = DateTimeFormatter.ofPattern("dd/MMM/yyyy:HH:mm:ss Z", Locale.US)
 
-/** Configures a Kalin app as a static file server for [options]. */
-fun KalinConfig.staticServer(options: ServerOptions) {
+/** Configures a Kalin app as a static file server for [options]; access log lines go to [accessLogSink]. */
+fun KalinConfig.staticServer(
+    options: ServerOptions,
+    accessLogSink: (String) -> Unit = { line -> accessLog.info { line } },
+) {
     val root = options.directory.toAbsolutePath().normalize()
     server.host = options.host
     server.port = options.port
@@ -66,11 +70,41 @@ fun KalinConfig.staticServer(options: ServerOptions) {
     if (options.accessLog) {
         requestLogger.http { ctx, ms ->
             val size = ctx.exchange().responseBodyBytes.let { if (it > 0) it.toString() else "-" }
+            // Only an authenticated user name is logged: anything else is attacker-chosen text
+            val user =
+                options.basicAuth
+                    ?.let { (name, password) ->
+                        ctx.basicAuthCredentials()?.takeIf {
+                            sameText(it.username, name) && sameText(it.password, password)
+                        }
+                    }
+                    ?.username
             val line =
-                "${ctx.ip()} - ${ctx.basicAuthCredentials()?.username ?: "-"} [${clfDate.format(ZonedDateTime.now())}] " +
-                    "\"${ctx.method()} ${ctx.exchange().target} ${ctx.protocol()}\" ${ctx.statusCode()} $size " +
-                    "\"${ctx.header(Header.REFERER) ?: "-"}\" \"${ctx.userAgent() ?: "-"}\" ${String.format(Locale.ROOT, "%.1f", ms)}ms"
-            accessLog.info { line }
+                "${logEscape(ctx.ip())} - ${user?.let(::logEscape) ?: "-"} [${clfDate.format(ZonedDateTime.now())}] " +
+                    "\"${logEscape("${ctx.method()} ${ctx.exchange().target} ${ctx.protocol()}")}\" ${ctx.statusCode()} $size " +
+                    "\"${ctx.header(Header.REFERER)?.let(::logEscape) ?: "-"}\" " +
+                    "\"${ctx.userAgent()?.let(::logEscape) ?: "-"}\" ${String.format(Locale.ROOT, "%.1f", ms)}ms"
+            accessLogSink(line)
+        }
+    }
+}
+
+private fun sameText(a: String, b: String): Boolean = MessageDigest.isEqual(a.toByteArray(), b.toByteArray())
+
+/**
+ * Escapes a client-supplied access log value like nginx: `"`, `\` and control characters (including C1 controls and
+ * Unicode line separators) become `\xHH` / `\uHHHH`, so a value cannot end its field or forge a log line.
+ */
+internal fun logEscape(value: String): String {
+    if (value.none { it == '"' || it == '\\' || it.isISOControl() || it == '\u2028' || it == '\u2029' }) return value
+    return buildString(value.length + 16) {
+        for (c in value) {
+            when {
+                c == '"' || c == '\\' || c.code < 0x100 && c.isISOControl() ->
+                    append("\\x").append(c.code.toString(16).uppercase().padStart(2, '0'))
+                c == '\u2028' || c == '\u2029' -> append("\\u").append(c.code.toString(16).uppercase().padStart(4, '0'))
+                else -> append(c)
+            }
         }
     }
 }
