@@ -39,6 +39,19 @@ The same `Hello, World!` route without the `nonBlocking` marker, so it runs on a
 back to back. `EVENT_LOOP` hands each request to a new virtual thread and back, which serializes pipelined requests.
 That is why `LOOM` is the default; use `EVENT_LOOP` for non-blocking endpoints and for many idle connections (SSE).
 
+### Many idle SSE streams
+
+`benchmarks` module, `SseScaleKt` (server: `EVENT_LOOP`/EPOLL, 4 loops, `-Xmx2g -XX:+UseSerialGC`) with
+`benchmarks/scripts/sse_clients.py` opening the connections from a separate process:
+
+| Open streams | Heap after GC | Platform threads | Broadcast delivered |
+|---:|---:|---:|---:|
+| 10,000 | 50 MB | 19 | 10,000 |
+| 50,000 | 243 MB | 19 | 50,000 |
+
+About 5 KB of heap per kept-alive stream and no thread per stream: a stream that only waits holds a small input
+buffer (to notice the client closing) and an output buffer sized to its recent events.
+
 ### Startup and footprint
 
 `benchmarks` module, `FootprintKt` (one route, after one request and a full GC, `-XX:+UseSerialGC`):

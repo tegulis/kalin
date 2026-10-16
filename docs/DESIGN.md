@@ -44,6 +44,7 @@ other backlog items.
 | Startup < 100 ms | LOOM ~55 ms, EVENT_LOOP/NIO ~70 ms; EVENT_LOOP/EPOLL ~110 ms because of FFM stub generation (started in the background by `Kalin.create`) |
 | Idle heap < 15 MB with one route | 5.5–7.3 MB |
 | Handlers on virtual threads by default | Yes |
+| 50k open SSE clients with low memory (EVENT_LOOP) | Met: 50,000 streams in 243 MB heap with 19 platform threads |
 | `kalin-core` jar < 400 KB | Not met: ~670 KB. Most of it is Kotlin metadata and bytecode of the full §6.1 API (61 response exception classes alone are ~110 KB uncompressed). |
 | Other jars < 50 KB | `kalin-json` 20 KB, `kalin-rendering-jte` 8 KB, `kalin-inject` 6 KB; `kalin-testtools` ~70 KB (not met) |
 

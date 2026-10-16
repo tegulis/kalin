@@ -25,6 +25,10 @@ internal class OutputQueue(private val chunkSize: Int) {
     }
 
     private val lock = ReentrantLock()
+
+    /** The first chunk size for the next output, adapted to the last flushed batch. */
+    private var sizeHint = MIN_CHUNK
+    private var batchBytes = 0L
     private val drained = lock.newCondition()
     private val segs = ArrayDeque<Seg>()
 
@@ -56,7 +60,7 @@ internal class OutputQueue(private val chunkSize: Int) {
             }
             if (left > 0) {
                 // Start small (most responses and SSE events are small); grow to chunkSize for larger outputs
-                val buf = ByteArray(maxOf(if (segs.isEmpty()) MIN_CHUNK else chunkSize, left))
+                val buf = ByteArray(maxOf(if (segs.isEmpty()) sizeHint else chunkSize, left))
                 System.arraycopy(b, o, buf, 0, left)
                 segs.addLast(Bytes(buf, 0, left))
             }
@@ -112,12 +116,13 @@ internal class OutputQueue(private val chunkSize: Int) {
                             val n = socket.write(seg.buf, seg.off, seg.len)
                             if (n > 0) progressed = true
                             pending -= n
+                            batchBytes += n
                             if (n < seg.len) {
                                 seg.off += n
                                 seg.len -= n
                                 return false
                             }
-                            if (segs.size == 1 && seg.appendable && seg.buf.size <= RETAIN_LIMIT) {
+                            if (segs.size == 1 && seg.appendable && seg.buf.size <= maxOf(sizeHint, MIN_CHUNK)) {
                                 // keep the buffer for the next response
                                 seg.off = 0
                                 seg.len = 0
@@ -139,6 +144,16 @@ internal class OutputQueue(private val chunkSize: Int) {
                             segs.pollFirst()
                         }
                     }
+                }
+                // Everything written: size the next first chunk after this batch (small for idle and SSE
+                // connections, large enough for pipelined batches)
+                if (batchBytes > 0) {
+                    sizeHint =
+                        Integer.highestOneBit(
+                                batchBytes.coerceIn(MIN_CHUNK.toLong(), chunkSize.toLong()).toInt() * 2 - 1
+                            )
+                            .coerceAtMost(maxOf(chunkSize, MIN_CHUNK))
+                    batchBytes = 0
                 }
                 return true
             } finally {
@@ -175,6 +190,3 @@ internal class OutputQueue(private val chunkSize: Int) {
 }
 
 private const val MIN_CHUNK = 1024
-
-/** Buffers up to this size are kept for the next response; larger ones are released (idle connections stay small). */
-private const val RETAIN_LIMIT = 4096
