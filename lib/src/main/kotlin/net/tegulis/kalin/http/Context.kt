@@ -12,6 +12,7 @@ import java.util.stream.Stream
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
 import net.tegulis.kalin.async.AsyncTaskConfig
+import net.tegulis.kalin.config.ForwardedHeaders
 import net.tegulis.kalin.config.Key
 import net.tegulis.kalin.config.MultipartConfig
 import net.tegulis.kalin.engine.Exchange
@@ -123,6 +124,18 @@ public abstract class Context {
 
     /** The IP of the directly connected peer. */
     public abstract fun remoteIp(): String
+
+    /**
+     * The forwarding chain of this request, from the original client (left) to the proxy closest to the server (right):
+     * the `for=` entries of the `Forwarded` header, else the entries of `X-Forwarded-For`, else `X-Real-IP`; empty if
+     * none of them is present. Quotes, brackets and ports are stripped, multiple header lines are joined. The chain is
+     * parsed from the headers whether or not `config.contextResolver.useForwardedHeaders()` is enabled.
+     *
+     * **This is untrusted client input.** Any client can send these headers, and proxies append to them instead of
+     * replacing them, so only the entries added by your own proxies (at the right end) can be trusted. Use [ip] with
+     * `useForwardedHeaders(...)` to get the client IP.
+     */
+    public open fun forwardedFor(): List<String> = ForwardedHeaders.forwardedFor(this)
 
     /** The request body as a string (decoded with the request charset, default UTF-8). */
     public open fun body(): String =

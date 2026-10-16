@@ -114,7 +114,7 @@ class ContextTest :
             }
             testKalin {
                 app {
-                    contextResolver.useForwardedHeaders()
+                    contextResolver.useForwardedHeaders(trustedProxies = listOf("10.0.0.2"))
                     routes.get("/u") { ctx -> ctx.result("${ctx.scheme()}|${ctx.host()}|${ctx.ip()}") }
                 }
                 client
