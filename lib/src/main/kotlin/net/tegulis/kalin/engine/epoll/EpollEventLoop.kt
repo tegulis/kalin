@@ -44,8 +44,12 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
         if (listenFd >= 0) Native.epollCtl(scratch, epfd, Native.EPOLL_CTL_ADD, listenFd, Native.EPOLLIN, TAG_LISTEN)
     }
 
+    /** Set once the eventfd and arena are released; guarded by the wakeup lock. */
+    private var terminated = false
+
     override fun wakeup() {
-        synchronized(wakeupScratch) { Native.writeEventfd(wakeupScratch, eventFd) }
+        // Handler threads may still submit tasks after the loop ended
+        synchronized(wakeupScratch) { if (!terminated) Native.writeEventfd(wakeupScratch, eventFd) }
     }
 
     override fun poll(timeoutMs: Long) {
@@ -175,6 +179,7 @@ internal class EpollEventLoop(name: String, runtime: ServerRuntime, private val 
             accepting = false
             if (listenFd >= 0) Native.close(scratch, listenFd)
         }
+        synchronized(wakeupScratch) { terminated = true }
         Native.close(scratch, eventFd)
         Native.close(scratch, epfd)
         // The arena is shared with wakeup callers; leave it to the GC-independent close after the thread ends

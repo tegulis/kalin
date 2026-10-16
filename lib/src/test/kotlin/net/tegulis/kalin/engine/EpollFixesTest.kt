@@ -64,6 +64,17 @@ class EpollFixesTest :
                 socket.localAddress?.port shouldBe port
             }
 
+            test("waking a terminated loop is a no-op") {
+                val loop = EpollEventLoop("test-wakeup", runtime(), -1)
+                loop.start()
+                loop.shutdown()
+                loop.thread.join(2000)
+                loop.thread.isAlive shouldBe false
+                // A handler thread finishing late still hands work to the loop
+                loop.execute {}
+                loop.shutdown()
+            }
+
             test("failing accepts pause the listener instead of spinning, then accepting resumes") {
                 val listenFd = Arena.ofConfined().use { EpollEventLoop.listen(Native.Scratch(it), "127.0.0.1", 0, 16) }
                 val loop = EpollEventLoop("test-accept", runtime(), listenFd)
