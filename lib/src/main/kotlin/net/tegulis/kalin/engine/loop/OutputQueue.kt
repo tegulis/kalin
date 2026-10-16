@@ -69,12 +69,22 @@ internal class OutputQueue(private val chunkSize: Int) {
         }
     }
 
-    /** Queues a file region; the returned latch opens when it was written (or the connection closed). */
-    fun appendFile(path: Path, position: Long, count: Long): java.util.concurrent.CountDownLatch {
+    /**
+     * Queues a file region; the returned latch opens when it was written (or the connection closed). [open] opens the
+     * file right away (under the lock, like socket writes) instead of when the loop reaches it.
+     */
+    fun appendFile(
+        path: Path,
+        position: Long,
+        count: Long,
+        open: (() -> AutoCloseable)? = null,
+    ): java.util.concurrent.CountDownLatch {
         lock.withLock {
             if (closed) throw IOException("Connection closed")
+            val file = open?.invoke()
             (segs.peekLast() as? Bytes)?.appendable = false
             val seg = FileSeg(path, position, count)
+            seg.file = file
             segs.addLast(seg)
             pending += count
             return seg.done

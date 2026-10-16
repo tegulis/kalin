@@ -636,8 +636,9 @@ internal class LoopConnection(
 
     override fun writeFile(path: Path, position: Long, count: Long) {
         if (loop.inLoop) {
-            // Never block the loop: copy through the queue instead of waiting for sendfile completion
-            FileChannel.open(path).use { writeFile(it, position, count) }
+            // Never block the loop: queue the region and let the loop send it as the socket drains. Opening the file
+            // now reports a missing file to the handler.
+            out.appendFile(path, position, count) { socket.openFile(path) }
             return
         }
         val done = out.appendFile(path, position, count)

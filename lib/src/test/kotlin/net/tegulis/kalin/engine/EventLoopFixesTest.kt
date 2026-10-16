@@ -2,6 +2,7 @@ package net.tegulis.kalin.engine
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -105,6 +106,37 @@ class EventLoopFixesTest :
                             (total > size) shouldBe true
                         }
                     }
+                    failure.get() shouldBe null
+                    Files.delete(file)
+                }
+
+                test("a non-blocking handler sends a file larger than the heap without copying it") {
+                    val size = Runtime.getRuntime().maxMemory() + 64L * 1024 * 1024
+                    val file = sparseFile(size)
+                    val failure = AtomicReference<Throwable>()
+                    val onLoop = AtomicBoolean(false)
+                    withEngine(
+                        transport,
+                        { ex ->
+                            onLoop.set(!Thread.currentThread().isVirtual)
+                            try {
+                                ex.sendFile(file, 0, size)
+                            } catch (t: Throwable) {
+                                failure.set(t)
+                                ex.abort()
+                            }
+                        },
+                        nonBlocking = true,
+                    ) {
+                        Socket("127.0.0.1", port).use { s ->
+                            s.soTimeout = 5000
+                            s.getOutputStream().write("GET / HTTP/1.1\r\nHost: x\r\n\r\n".toByteArray())
+                            val head = String(s.getInputStream().readNBytes(1024 * 1024), Charsets.ISO_8859_1)
+                            head shouldStartWith "HTTP/1.1 200"
+                            head shouldContain "Content-Length: $size"
+                        }
+                    }
+                    onLoop.get() shouldBe true
                     failure.get() shouldBe null
                     Files.delete(file)
                 }
