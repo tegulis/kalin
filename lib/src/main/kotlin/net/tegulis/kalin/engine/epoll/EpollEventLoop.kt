@@ -203,7 +203,15 @@ internal class EpollSocket(
 
     override fun openFile(path: Path): AutoCloseable {
         val fileFd = Arena.ofConfined().use { a -> Native.openRead(ws, a, path.toAbsolutePath().toString()) }
-        return AutoCloseable { Native.close(ws, fileFd) }.also { handles[it] = fileFd }
+        // Closing is idempotent: a descriptor closed twice may already belong to another connection or file
+        val handle =
+            object : AutoCloseable {
+                override fun close() {
+                    handles.remove(this)?.let { Native.close(ws, it) }
+                }
+            }
+        handles[handle] = fileFd
+        return handle
     }
 
     private val handles = java.util.concurrent.ConcurrentHashMap<AutoCloseable, Int>()
@@ -236,7 +244,6 @@ internal class EpollSocket(
         open = false
         loop.removed(fd)
         Native.close(s, fd)
-        for (h in handles.values) Native.close(s, h)
-        handles.clear()
+        for (h in handles.keys) handles.remove(h)?.let { Native.close(s, it) }
     }
 }
