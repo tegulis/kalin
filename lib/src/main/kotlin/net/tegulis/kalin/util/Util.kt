@@ -3,13 +3,18 @@ package net.tegulis.kalin.util
 import java.net.URLDecoder
 import java.nio.charset.Charset
 import java.util.Base64
+import net.tegulis.kalin.http.BadRequestResponse
 import net.tegulis.kalin.http.Context
 import net.tegulis.kalin.http.Cookie
 import net.tegulis.kalin.json.SimpleJson
 
 /** Parses `application/x-www-form-urlencoded` data and query strings. */
 public object FormParser {
-    /** Splits `a=1&b=2&a=3` into a multimap, percent-decoding keys and values (`+` is a space). */
+    /**
+     * Splits `a=1&b=2&a=3` into a multimap, percent-decoding keys and values (`+` is a space).
+     *
+     * @throws BadRequestResponse if a key or value contains an invalid percent escape such as `%ZZ`.
+     */
     @JvmStatic
     public fun parse(string: String, charset: Charset = Charsets.UTF_8): Map<String, List<String>> {
         if (string.isEmpty()) return emptyMap()
@@ -25,19 +30,19 @@ public object FormParser {
                 val rawValue = if (eq < 0) "" else string.substring(eq + 1, end)
                 val key = decode(rawKey, charset)
                 val value = decode(rawValue, charset)
-                if (key != null && value != null) result.getOrPut(key) { ArrayList(1) }.add(value)
+                result.getOrPut(key) { ArrayList(1) }.add(value)
             }
             start = end + 1
         }
         return result
     }
 
-    private fun decode(s: String, charset: Charset): String? {
+    private fun decode(s: String, charset: Charset): String {
         if (s.indexOf('%') < 0 && s.indexOf('+') < 0) return s
         return try {
             URLDecoder.decode(s, charset)
         } catch (_: IllegalArgumentException) {
-            null
+            throw BadRequestResponse("Malformed percent-encoding in parameters")
         }
     }
 }
