@@ -62,9 +62,9 @@ Requirements: JDK 25+, Kotlin 2.4+ (for the Kotlin-specific APIs).
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("net.tegulis.kalin:kalin:0.1.0")
-    implementation("net.tegulis.kalin:kalin-json:0.1.0")          // kotlinx.serialization JSON (optional)
-    testImplementation("net.tegulis.kalin:kalin-testtools:0.1.0")  // testKalin { } (optional)
+    implementation("net.tegulis.kalin:kalin:0.2.0")
+    implementation("net.tegulis.kalin:kalin-json:0.2.0")          // kotlinx.serialization JSON (optional)
+    testImplementation("net.tegulis.kalin:kalin-testtools:0.2.0")  // testKalin { } (optional)
 }
 ```
 
@@ -384,7 +384,7 @@ The `app` module builds `kalin-server`, which serves a directory like a minimal 
 
 ```sh
 ./gradlew :app:shadowJar
-java --enable-native-access=ALL-UNNAMED -jar app/build/libs/kalin-server-0.1.0-all.jar -p 8080 /var/www
+java --enable-native-access=ALL-UNNAMED -jar app/build/libs/kalin-server-0.2.0-all.jar -p 8080 /var/www
 ```
 
 It listens on `127.0.0.1` only by default. Pass `-b 0.0.0.0` (or a specific address) to serve other machines; this

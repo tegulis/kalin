@@ -3,7 +3,7 @@
 > This is the original design document. Section 0 records how it was implemented and the decisions made on the way;
 > the rest is kept as written. User documentation is in the [README](../README.md).
 
-## 0. Implementation status (0.1.0)
+## 0. Implementation status (0.2.0)
 
 **Coordinates and packages.** Group `net.tegulis.kalin`; artifacts `kalin` (core, Gradle module `lib`),
 `kalin-json`, `kalin-testtools`, `kalin-rendering-jte`, `kalin-inject`, `kalin-bundle`. Packages are
