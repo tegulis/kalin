@@ -5,6 +5,4 @@ plugins {
 
 description = "Kalin examples"
 
-dependencies {
-    implementation(project(":lib"))
-}
+dependencies { implementation(project(":lib")) }

@@ -165,6 +165,11 @@ public class Kalin private constructor(private val cfg: KalinConfig) {
         return e.connectInMemory()
     }
 
+    /** The JSON mapper of this app (available after start). */
+    @KalinInternalApi
+    public fun jsonMapper(): net.tegulis.kalin.json.JsonMapper =
+        state?.jsonMapper ?: cfg.jsonMapper ?: net.tegulis.kalin.json.JsonMapper.default()
+
     /** Low-level access to the configuration after creation (for test tools and plugins). */
     @KalinInternalApi public fun unsafeConfig(): KalinConfig = cfg
 

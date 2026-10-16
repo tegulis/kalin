@@ -44,6 +44,7 @@ internal class RequestHead {
  */
 internal class HttpParser(private val limits: Limits) {
     private var scanPos = -1
+    private var absoluteHost: String? = null
 
     /** Forgets the incremental scan state; call before parsing the next request. */
     fun reset() {
@@ -106,6 +107,7 @@ internal class HttpParser(private val limits: Limits) {
     /** Parses a complete head in `buf[start, headEnd)` as found by [findHeadEnd]. */
     fun parse(buf: ByteArray, start: Int, headEnd: Int): RequestHead {
         val head = RequestHead()
+        absoluteHost = null
         var pos = parseRequestLine(buf, start, headEnd, head)
         val headerStart = pos
         var count = 0
@@ -163,6 +165,8 @@ internal class HttpParser(private val limits: Limits) {
             pos = lineEnd + 1
         }
         if (hostCount > 1) throw HttpParseException(400, "Multiple Host headers")
+        // RFC 9112 3.2.2: with an absolute-form target, the target's authority replaces the Host header
+        absoluteHost?.let { head.host = it }
         if (head.http11 && hostCount == 0 && head.host == null) throw HttpParseException(400, "Missing Host header")
         if (head.host != null && !validHost(head.host!!)) throw HttpParseException(400, "Invalid Host header")
         if (transferEncoding != null) {
@@ -232,13 +236,14 @@ internal class HttpParser(private val limits: Limits) {
         val pathEnd = if (queryAt < 0) te - ts else queryAt - ts
         head.query = if (queryAt < 0) null else target.substring(pathEnd + 1)
         var path = if (queryAt < 0) target else target.substring(0, pathEnd)
+        if (path.isEmpty()) throw HttpParseException(400, "Invalid request target")
         if (path[0] != '/') {
             when {
                 path == "*" -> {}
                 path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true) -> {
                     val authStart = path.indexOf("//") + 2
                     val slash = path.indexOf('/', authStart)
-                    head.host = if (slash < 0) path.substring(authStart) else path.substring(authStart, slash)
+                    absoluteHost = if (slash < 0) path.substring(authStart) else path.substring(authStart, slash)
                     path = if (slash < 0) "/" else path.substring(slash)
                 }
                 head.method === "CONNECT" -> {}
