@@ -195,6 +195,21 @@ class EventLoopFixesTest :
                     }
                 }
 
+                test("empty lines between requests do not keep a connection beyond the idle timeout") {
+                    withEngine(
+                        transport,
+                        { ex -> ex.send("ok".toByteArray()) },
+                        configure = { idleTimeout = 500.milliseconds },
+                    ) {
+                        Socket("127.0.0.1", port).use { s ->
+                            s.soTimeout = 3000
+                            s.getOutputStream().write("GET / HTTP/1.1\r\nHost: x\r\n\r\n".toByteArray())
+                            readResponseBody(s.getInputStream().buffered()) shouldBe "ok"
+                            dripUntilClosed(s, "\r\n".toByteArray(), 2500) shouldBe true
+                        }
+                    }
+                }
+
                 test("a malformed pipelined request is answered after the earlier responses") {
                     testKalin(mode = TestMode.REAL, engine = Engine.EVENT_LOOP, transport = transport) {
                         app { routes.get("/") { it.result("root") } }

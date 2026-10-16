@@ -54,6 +54,9 @@ internal class LoopConnection(
     private var current: Http1Exchange? = null
     private var head: RequestHead? = null
     private var headDeadlineSet = false
+
+    /** The idle timeout runs; empty lines between requests must not restart it (slowloris). */
+    private var idleArmed = false
     private var inputEof = false
     private var readPaused = false
     private var closeAfterFlush = false
@@ -92,6 +95,13 @@ internal class LoopConnection(
     fun start() {
         runtime.connections.add(this)
         loop.timer.register(timeout)
+        timeout.after(runtime.idleTimeoutMs)
+        idleArmed = true
+    }
+
+    private fun armIdleTimeout() {
+        if (idleArmed) return
+        idleArmed = true
         timeout.after(runtime.idleTimeoutMs)
     }
 
@@ -217,11 +227,12 @@ internal class LoopConnection(
                 if (out.isEmpty) closeNow()
                 return false
             }
-            if (out.isEmpty) timeout.after(runtime.idleTimeoutMs)
+            if (out.isEmpty) armIdleTimeout()
             return false
         }
         inPos += parser.skipLeadingEmptyLines(inBuf, inPos, inLimit)
         if (inPos == inLimit) return true
+        idleArmed = false
         val headEnd = parser.findHeadEnd(inBuf, inPos, inLimit)
         if (headEnd < 0) {
             idle = false
@@ -542,7 +553,7 @@ internal class LoopConnection(
                 lingerAndClose()
                 return
             }
-            if (state == READ_HEAD && inPos == inLimit) timeout.after(runtime.idleTimeoutMs)
+            if (state == READ_HEAD && inPos == inLimit) armIdleTimeout()
             else if (state == HANDLING && pipe?.finishedFeeding != false) timeout.clear()
         } else {
             if (!writeInterest) {
