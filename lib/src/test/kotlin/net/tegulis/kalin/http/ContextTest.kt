@@ -486,3 +486,31 @@ class ContextTest :
             }
         }
     })
+
+class SecurityTest :
+    FunSpec({
+        test("cookie values that could inject attributes are rejected") {
+            testKalin {
+                app {
+                    routes.get("/bad") { it.cookie("a", "1; Domain=evil.com") }
+                    routes.get("/good") { it.cookie("a", java.net.URLEncoder.encode("1; x", Charsets.UTF_8)) }
+                }
+                client.get("/bad").let {
+                    it.code shouldBe 500
+                    it.header("Set-Cookie") shouldBe null
+                }
+                client.get("/good").header("Set-Cookie") shouldStartWith "a=1%3B+x"
+            }
+        }
+
+        test("method override only applies to POST") {
+            testKalin {
+                app {
+                    routes.get("/r") { it.result("get") }
+                    routes.delete("/r") { it.result("delete") }
+                }
+                client.get("/r") { header("X-HTTP-Method-Override", "DELETE") }.bodyAsText() shouldBe "get"
+                client.post("/r") { header("X-HTTP-Method-Override", "delete") }.bodyAsText() shouldBe "delete"
+            }
+        }
+    })

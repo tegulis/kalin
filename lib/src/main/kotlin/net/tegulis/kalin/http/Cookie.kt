@@ -26,8 +26,20 @@ constructor(
     var sameSite: SameSite? = null,
     var partitioned: Boolean = false,
 ) {
-    /** Formats this cookie as a `Set-Cookie` header value. */
+    /**
+     * Formats this cookie as a `Set-Cookie` header value. Throws [IllegalArgumentException] for names, values or
+     * attributes that are not allowed by RFC 6265 (they could inject attributes into the header).
+     */
     public fun toSetCookieHeader(): String = buildString {
+        require(name.isNotEmpty() && name.all { it.code in 0x21..0x7E && it !in "()<>@,;:\\\"/[]?={}" }) {
+            "Invalid cookie name: '$name'"
+        }
+        require(value.all { it.code in 0x21..0x7E && it !in "\",;\\" }) {
+            "Invalid cookie value for '$name' (encode it first)"
+        }
+        require(path.none { it == ';' || it.code < 0x20 } && domain?.any { it == ';' || it.code < 0x20 } != true) {
+            "Invalid cookie path or domain"
+        }
         append(name).append('=').append(value)
         if (path.isNotEmpty()) append("; Path=").append(path)
         domain?.let { append("; Domain=").append(it) }

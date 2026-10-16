@@ -119,8 +119,9 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
         cachedMethod?.let {
             return it
         }
-        val override = exchange.requestHeaders[Header.X_HTTP_METHOD_OVERRIDE]
-        val m = HandlerType.findOrDefault(override?.uppercase() ?: exchange.method)
+        // Only POST may be overridden: a plain GET must never turn into a state-changing method
+        val override = if (exchange.method == "POST") exchange.requestHeaders[Header.X_HTTP_METHOD_OVERRIDE] else null
+        val m = HandlerType.findOrDefault(override?.trim()?.uppercase() ?: exchange.method)
         cachedMethod = m
         return m
     }
@@ -156,8 +157,10 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
             if (!exchange.hasRequestBody) ByteArray(0)
             else {
                 val input = exchange.requestBody()
-                if (declared >= 0) input.readNBytes(declared.toInt())
-                else {
+                if (declared >= 0) {
+                    if (declared > Int.MAX_VALUE - 8) throw ContentTooLargeResponse("Body too large")
+                    input.readNBytes(declared.toInt())
+                } else {
                     val limit = state.maxRequestSize
                     val data = input.readNBytes((limit + 1).coerceAtMost(Int.MAX_VALUE.toLong() - 8).toInt())
                     if (data.size > limit) {
