@@ -5,11 +5,14 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.time.Duration.Companion.milliseconds
 import net.tegulis.kalin.config.ServerConfig
 import net.tegulis.kalin.testtools.TestMode
 import net.tegulis.kalin.testtools.testKalin
@@ -64,6 +67,45 @@ class EventLoopFixesTest :
                             (received.size < 300_000) shouldBe true
                         }
                     }
+                    Files.delete(file)
+                }
+
+                test("a slow file download that keeps progressing outlives the write timeout") {
+                    val size = 24L * 1024 * 1024
+                    val file = sparseFile(size)
+                    val failure = AtomicReference<Throwable>()
+                    withEngine(
+                        transport,
+                        { ex ->
+                            try {
+                                ex.sendFile(file, 0, size)
+                            } catch (e: IOException) {
+                                failure.set(e)
+                                ex.abort()
+                            }
+                        },
+                        configure = { writeTimeout = 300.milliseconds },
+                    ) {
+                        Socket().use { s ->
+                            s.receiveBufferSize = 64 * 1024
+                            s.connect(InetSocketAddress("127.0.0.1", port))
+                            s.soTimeout = 5000
+                            s.getOutputStream()
+                                .write("GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".toByteArray())
+                            // Seconds in total, far longer than the write timeout, but always progressing
+                            val input = s.getInputStream()
+                            val buf = ByteArray(64 * 1024)
+                            var total = 0L
+                            while (true) {
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                total += n
+                                Thread.sleep(10)
+                            }
+                            (total > size) shouldBe true
+                        }
+                    }
+                    failure.get() shouldBe null
                     Files.delete(file)
                 }
             }

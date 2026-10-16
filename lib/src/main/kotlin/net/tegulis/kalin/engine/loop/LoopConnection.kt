@@ -642,8 +642,22 @@ internal class LoopConnection(
         }
         val done = out.appendFile(path, position, count)
         requestFlush()
-        if (!done.await(runtime.writeTimeoutMs + 1000, TimeUnit.MILLISECONDS) || closed)
-            throw IOException("File write failed")
+        // The loop enforces the write timeout on progress; this wait only guards against a lost connection, so it fails
+        // after a write timeout (plus slack) without progress, not after a fixed total time
+        val stall = TimeUnit.MILLISECONDS.toNanos(runtime.writeTimeoutMs + 1000)
+        var pending = out.pending
+        var deadline = System.nanoTime() + stall
+        while (!done.await(250, TimeUnit.MILLISECONDS) && !closed) {
+            val now = System.nanoTime()
+            val p = out.pending
+            if (p < pending) {
+                pending = p
+                deadline = now + stall
+            } else if (now - deadline > 0) {
+                throw IOException("Write timed out")
+            }
+        }
+        if (closed) throw IOException("File write failed")
     }
 
     override fun bodyInput(head: RequestHead, exchange: Http1Exchange): BodyInput {
