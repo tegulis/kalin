@@ -169,6 +169,15 @@ class EventLoopFixesTest :
                         }
                     }
                 }
+
+                test("a malformed pipelined request is answered after the earlier responses") {
+                    testKalin(mode = TestMode.REAL, engine = Engine.EVENT_LOOP, transport = transport) {
+                        app { routes.get("/") { it.result("root") } }
+                        val r = client.raw("GET / HTTP/1.1\r\nHost: x\r\n\r\n".repeat(2) + "BAD\r\n\r\n", responses = 3)
+                        r.responses.map { it.code } shouldBe listOf(200, 200, 400)
+                        r.closedByServer shouldBe true
+                    }
+                }
             }
         }
 

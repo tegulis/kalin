@@ -279,6 +279,19 @@ internal class LoopConnection(
         return runtime.handler.isNonBlocking(override, h.path)
     }
 
+    /**
+     * Processes already buffered input outside [onReadable] (after a completion or a resumed read). Returns false if a
+     * malformed request was answered with an error (which also flushes the earlier responses).
+     */
+    private fun processBuffered(): Boolean =
+        try {
+            process()
+            true
+        } catch (e: HttpParseException) {
+            protocolError(e.status, e.message ?: "Bad Request")
+            false
+        }
+
     private fun readInlineBody(): Boolean {
         val sink = inlineBody!!
         val avail = inLimit - inPos
@@ -363,7 +376,7 @@ internal class LoopConnection(
         if (closed || !readPaused) return
         readPaused = false
         socket.setReadInterest(true)
-        process()
+        if (!processBuffered()) return
         onReadable() // edge-triggered transports report no new event for data already in the socket
     }
 
@@ -481,20 +494,14 @@ internal class LoopConnection(
             pipe = null
             drainedBytes = 0
             state = DRAIN_BODY
-            if (!dispatching) {
-                process()
-                flushOutput()
-            }
+            if (!dispatching && processBuffered()) flushOutput()
             return
         }
         nextRequest()
         // Inside an inline dispatch the enclosing process() loop handles further pipelined requests (no recursion) and
         // their responses are flushed together. Here process() has consumed every complete request, so anything left is
         // a partial head the client may only complete after seeing this response: flush now.
-        if (!dispatching) {
-            process()
-            flushOutput()
-        }
+        if (!dispatching && processBuffered()) flushOutput()
     }
 
     private fun nextRequest() {
