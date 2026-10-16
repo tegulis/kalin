@@ -96,7 +96,7 @@ internal class LoopConnection(
     }
 
     fun onWritable() {
-        if (closed) return
+        if (closed || !writeInterest) return
         try {
             flushOutput()
         } catch (_: IOException) {
@@ -107,7 +107,8 @@ internal class LoopConnection(
     private fun readLoop() {
         while (!closed && !inputEof && !readPaused) {
             if (inLimit == inBuf.size && !makeRoom()) break
-            val n = socket.read(inBuf, inLimit, inBuf.size - inLimit)
+            val space = inBuf.size - inLimit
+            val n = socket.read(inBuf, inLimit, space)
             if (n == 0) break
             if (n < 0) {
                 inputEof = true
@@ -115,7 +116,9 @@ internal class LoopConnection(
             }
             inLimit += n
             process()
-            if (!socket.edgeTriggered && n < inBuf.size) break
+            // A short read means the socket buffer is empty: new data triggers a new edge (or level) event, so
+            // another read would only return EAGAIN.
+            if (n < space) break
         }
         if (!closed) process()
         if (inputEof && !closed) onInputEof()

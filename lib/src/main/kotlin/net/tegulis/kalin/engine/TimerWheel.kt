@@ -21,9 +21,12 @@ internal class TimerWheel(private val tickMillis: Long = 100, wheelSize: Int = 5
 
         @Volatile var cancelled: Boolean = false
 
+        /** The wheel this timeout is registered with; its coarse clock avoids a clock read per call. */
+        @Volatile internal var wheel: TimerWheel? = null
+
         /** Sets the deadline to [millis] from now (0 or negative clears it). */
         fun after(millis: Long) {
-            deadline = if (millis <= 0) 0 else nowMillis() + millis
+            deadline = if (millis <= 0) 0 else (wheel?.now ?: nowMillis()) + millis
         }
 
         fun clear() {
@@ -41,11 +44,22 @@ internal class TimerWheel(private val tickMillis: Long = 100, wheelSize: Int = 5
     private val incoming = ConcurrentLinkedQueue<Timeout>()
     private var tick = nowMillis() / tickMillis
 
+    /**
+     * A coarse monotonic clock in milliseconds, updated on every [advance]. Reading the system clock can be expensive
+     * (for example with the HPET clock source), so hot paths use this value instead.
+     */
+    @Volatile
+    var now: Long = nowMillis()
+        private set
+
+    private var lastDateUpdate = 0L
+
     @Volatile private var thread: Thread? = null
     @Volatile private var running = false
 
     /** Registers [timeout]; safe from any thread. */
     fun register(timeout: Timeout) {
+        timeout.wheel = this
         incoming.add(timeout)
     }
 
@@ -55,7 +69,13 @@ internal class TimerWheel(private val tickMillis: Long = 100, wheelSize: Int = 5
             val t = incoming.poll() ?: break
             place(t, t.deadline)
         }
-        val nowTick = nowMillis() / tickMillis
+        val current = nowMillis()
+        now = current
+        if (current - lastDateUpdate >= 200) {
+            lastDateUpdate = current
+            DateCache.refresh()
+        }
+        val nowTick = current / tickMillis
         while (tick <= nowTick) {
             val bucket = buckets[(tick and mask.toLong()).toInt()]
             var n = bucket.size
@@ -63,7 +83,7 @@ internal class TimerWheel(private val tickMillis: Long = 100, wheelSize: Int = 5
                 val t = bucket.poll() ?: break
                 if (t.cancelled) continue
                 val d = t.deadline
-                if (d != 0L && d <= nowMillis()) {
+                if (d != 0L && d <= current) {
                     t.deadline = 0
                     try {
                         t.onExpire.run()
@@ -87,7 +107,7 @@ internal class TimerWheel(private val tickMillis: Long = 100, wheelSize: Int = 5
     }
 
     /** Milliseconds until the next tick, for event loops that block in a poll call. */
-    fun millisToNextTick(): Long = maxOf(1, (tick * tickMillis) - nowMillis())
+    fun millisToNextTick(): Long = maxOf(1, (tick * tickMillis) - now)
 
     /** Starts a daemon thread that drives the wheel. */
     fun startThread(name: String) {
