@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import net.tegulis.kalin.config.ForwardedHeader
 import net.tegulis.kalin.engine.Engine
 import net.tegulis.kalin.engine.Transport
 
@@ -37,7 +38,7 @@ data class ServerOptions(
     val headers: Map<String, String> = emptyMap(),
     val accessLog: Boolean = true,
     val logFormat: LogFormat = LogFormat.TEXT,
-    val proxyHeaders: Boolean = false,
+    val proxyHeaders: ForwardedHeader? = null,
     val maxConnections: Int = 0,
     val idleTimeout: Duration = 30.seconds,
     val serverHeader: String? = "kalin-server",
@@ -72,7 +73,8 @@ data class ServerOptions(
             |      --basic-auth-file <f>   Read user:pw for basic authentication from a file
             |                              (environment: KALIN_BASIC_AUTH=user:pw; use one source only)
             |  -H, --header <name:value>   Add a response header (repeatable)
-            |      --proxy-headers         Trust X-Forwarded-For/-Proto/-Host and Forwarded headers
+            |      --proxy-headers[=<h>]   Trust the proxy headers h: x-forwarded (default, X-Forwarded-For/
+            |                              -Proto/-Host) or forwarded (RFC 7239 Forwarded)
             |      --max-connections <n>   Limit open connections (default: unlimited)
             |      --idle-timeout <secs>   Close idle keep-alive connections after this time (default 30)
             |      --engine <engine>       LOOM (default) or EVENT_LOOP
@@ -158,7 +160,12 @@ data class ServerOptions(
                         if (colon <= 0) throw UsageException("--header expects 'Name: value'")
                         headers[text.substring(0, colon).trim()] = text.substring(colon + 1).trim()
                     }
-                    "--proxy-headers" -> o = o.copy(proxyHeaders = true)
+                    "--proxy-headers" ->
+                        o =
+                            o.copy(
+                                proxyHeaders =
+                                    inline?.let { enumValue<ForwardedHeader>(arg, it) } ?: ForwardedHeader.X_FORWARDED
+                            )
                     "--max-connections" -> o = o.copy(maxConnections = int(arg, v(), 0..Int.MAX_VALUE))
                     "--idle-timeout" -> o = o.copy(idleTimeout = int(arg, v(), 1..86_400).seconds)
                     "--engine" -> o = o.copy(engine = enumValue<Engine>(arg, v()))

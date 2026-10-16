@@ -75,7 +75,8 @@ likely to surprise.
 - **Forwarded headers**: Ktor's `XForwardedHeaders` uses the first (leftmost) proxy entry unless configured
   otherwise. Kalin's `useForwardedHeaders()` uses the rightmost entry and skips `trustedProxies` (addresses or CIDR
   ranges), the counterpart of Ktor's `useLastProxy()` / `skipKnownProxies(...)`. `ForwardedIp.LEFTMOST` gives the
-  leftmost entry.
+  leftmost entry. Like Ktor's two plugins, Kalin reads either `X-Forwarded-*` (the default) or `Forwarded`
+  (`headers = ForwardedHeader.FORWARDED`), never both.
 
 ### SSE
 

@@ -4,6 +4,7 @@ import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import net.tegulis.kalin.config.ContextResolverConfig
+import net.tegulis.kalin.config.ForwardedHeader
 import net.tegulis.kalin.config.ForwardedIp
 import net.tegulis.kalin.testtools.testKalin
 
@@ -49,16 +50,61 @@ class ForwardedHeadersTest :
                         header("X-Forwarded-Proto", "https")
                     }
                     .bodyAsText() shouldBe "1.2.3.4|https|localhost|[1.2.3.4, 10.1.2.3]"
+                client.get("/") { header("X-Forwarded-For", "10.0.0.1, 10.0.0.2") }.bodyAsText() shouldBe
+                    "10.0.0.1|http|localhost|[10.0.0.1, 10.0.0.2]"
+                client.get("/") { header("X-Real-IP", "5.5.5.5") }.bodyAsText() shouldBe
+                    "5.5.5.5|http|localhost|[5.5.5.5]"
+            }
+        }
+
+        test("Forwarded header with trusted proxies") {
+            testKalin {
+                app {
+                    contextResolver.useForwardedHeaders(
+                        ForwardedIp.RIGHTMOST,
+                        listOf("fd00::/8"),
+                        ForwardedHeader.FORWARDED,
+                    )
+                    routes.get("/") { show(it) }
+                }
                 client
                     .get("/") {
                         header("Forwarded", "for=6.6.6.6;proto=http, for=\"[2001:db8::1]:4711\";proto=https;host=a")
                         header("Forwarded", "for=\"[fd00::5]\";proto=http;host=b")
                     }
                     .bodyAsText() shouldBe "2001:db8::1|https|a|[6.6.6.6, 2001:db8::1, fd00::5]"
-                client.get("/") { header("X-Forwarded-For", "10.0.0.1, 10.0.0.2") }.bodyAsText() shouldBe
-                    "10.0.0.1|http|localhost|[10.0.0.1, 10.0.0.2]"
-                client.get("/") { header("X-Real-IP", "5.5.5.5") }.bodyAsText() shouldBe
-                    "5.5.5.5|http|localhost|[5.5.5.5]"
+            }
+        }
+
+        test("only the chosen header family is trusted") {
+            testKalin {
+                app {
+                    contextResolver.useForwardedHeaders()
+                    routes.get("/") { show(it) }
+                }
+                // A proxy that appends to X-Forwarded-For passes a client's own Forwarded header through
+                client
+                    .get("/") {
+                        header("Forwarded", "for=6.6.6.6;proto=https;host=evil")
+                        header("X-Forwarded-For", "1.2.3.4")
+                    }
+                    .bodyAsText() shouldBe "1.2.3.4|http|localhost|[6.6.6.6]"
+            }
+            testKalin {
+                app {
+                    contextResolver.useForwardedHeaders(headers = ForwardedHeader.FORWARDED)
+                    routes.get("/") { show(it) }
+                }
+                client
+                    .get("/") {
+                        header("Forwarded", "for=1.2.3.4")
+                        header("X-Forwarded-For", "6.6.6.6")
+                        header("X-Forwarded-Proto", "https")
+                        header("X-Forwarded-Host", "evil")
+                    }
+                    .bodyAsText() shouldBe "1.2.3.4|http|localhost|[1.2.3.4]"
+                client.get("/") { header("X-Real-IP", "6.6.6.6") }.bodyAsText() shouldBe
+                    "127.0.0.1|http|localhost|[6.6.6.6]"
             }
         }
 

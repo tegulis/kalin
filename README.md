@@ -293,7 +293,7 @@ Kalin.create { config ->
     config.http.defaultContentType = "text/plain"
     config.http.methodOverride = false        // ignore X-HTTP-Method-Override (honored on POST only by default)
     config.router.contextPath = "/api"
-    config.contextResolver.useForwardedHeaders()   // trust X-Forwarded-* / Forwarded (rightmost client IP)
+    config.contextResolver.useForwardedHeaders()   // trust X-Forwarded-* (rightmost client IP)
     config.requestLogger.http { ctx, ms -> log.info("${ctx.method()} ${ctx.path()} ${ctx.statusCode()} $ms ms") }
     config.events.serverStarted { log.info("up") }
     config.appData(myKey, myValue)
@@ -408,7 +408,7 @@ Usage: kalin-server [options] [directory]
       --basic-auth <user:pw>  Require HTTP basic authentication
       --basic-auth-file <f>   Read user:pw for basic authentication from a file
   -H, --header <name:value>   Add a response header (repeatable)
-      --proxy-headers         Trust X-Forwarded-* and Forwarded headers
+      --proxy-headers[=<h>]   Trust X-Forwarded-* (default) or, with =forwarded, Forwarded headers
       --engine / --transport  LOOM | EVENT_LOOP, AUTO | NIO | EPOLL
   -q, --quiet                 No access log (Common Log Format by default)
       --log-format <f>        text or json

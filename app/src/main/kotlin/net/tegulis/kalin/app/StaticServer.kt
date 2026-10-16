@@ -33,7 +33,7 @@ fun KalinConfig.staticServer(
     http.methodOverride = false
     http.compressionStrategy = if (options.compression) CompressionStrategy.GZIP else CompressionStrategy.NONE
     startup.showBanner = false
-    if (options.proxyHeaders) contextResolver.useForwardedHeaders()
+    options.proxyHeaders?.let { contextResolver.useForwardedHeaders(headers = it) }
 
     staticFiles.add { files ->
         files.directory = root.toString()

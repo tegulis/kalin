@@ -31,7 +31,9 @@ First release.
 ### Defaults
 
 - Default error responses are `text/plain` for HTML clients (no unescaped HTML).
-- `useForwardedHeaders()` takes the rightmost (proxy-added) forwarded client IP.
+- `useForwardedHeaders()` takes the rightmost (proxy-added) forwarded client IP and reads only `X-Forwarded-*`;
+  pass `headers = ForwardedHeader.FORWARDED` for the RFC 7239 `Forwarded` header. `kalin-server` takes
+  `--proxy-headers=forwarded`.
 - Multipart uploads are limited by `config.http.maxRequestSize` (1 MB) unless `maxTotalRequestSize` is set, and to
   1000 parts.
 - `kalin-server` binds to `127.0.0.1`; pass `-b 0.0.0.0` to listen on all interfaces.

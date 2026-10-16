@@ -64,9 +64,11 @@ lists everything that behaves differently. For Ktor, see [differences-ktor.md](d
 ### Proxies and CORS
 
 - **Client IP behind proxies**: `config.contextResolver.useForwardedHeaders()` takes the **rightmost** entry of the
-  forwarding chain (`Forwarded` / `X-Forwarded-For` / `X-Real-IP`) by default. That is the entry your own proxy
-  added, which clients cannot forge. Pass `trustedProxies` (IP addresses or CIDR ranges) to skip your inner proxies,
-  or `ForwardedIp.LEFTMOST` for Javalin's behavior. `ctx.forwardedFor()` returns the whole chain.
+  forwarding chain (`X-Forwarded-For` / `X-Real-IP`) by default. That is the entry your own proxy added, which
+  clients cannot forge. Pass `trustedProxies` (IP addresses or CIDR ranges) to skip your inner proxies, or
+  `ForwardedIp.LEFTMOST` for Javalin's behavior. Only one header family is read: `X-Forwarded-*` by default, or the
+  RFC 7239 `Forwarded` header with `headers = ForwardedHeader.FORWARDED`. `ctx.forwardedFor()` returns the whole
+  chain.
 
   ```kotlin
   config.contextResolver.useForwardedHeaders(ForwardedIp.RIGHTMOST, trustedProxies = listOf("10.0.0.0/8"))

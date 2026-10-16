@@ -95,16 +95,20 @@ public class ContextResolverConfig {
     @JvmField public var fullUrl: (Context) -> String = { ctx -> ctx.url() + (ctx.queryString()?.let { "?$it" } ?: "") }
 
     /**
-     * Trusts the `Forwarded` (RFC 7239) and `X-Forwarded-For` / `-Proto` / `-Host` headers set by reverse proxies. Only
-     * enable this when every request passes through a proxy that sets or appends these headers; otherwise any client
-     * can claim any IP, scheme or host.
+     * Trusts the `X-Forwarded-For` / `-Proto` / `-Host` or the `Forwarded` (RFC 7239) headers set by reverse proxies.
+     * Only enable this when every request passes through a proxy that sets or appends these headers; otherwise any
+     * client can claim any IP, scheme or host.
      *
-     * The client IP is picked from the forwarding chain: the `for=` entries of `Forwarded`, else `X-Forwarded-For`,
-     * else `X-Real-IP` (see `Context.forwardedFor`). With [ForwardedIp.RIGHTMOST] (the default) the chain is walked
-     * from the right, skipping [trustedProxies]; the first untrusted entry is the client (the leftmost entry if all are
-     * trusted). Proxies append to the chain, so entries left of your own proxies may be forged by the client, while the
-     * entry added by the proxy closest to the server cannot be. With [ForwardedIp.LEFTMOST] the first entry is used,
-     * like Javalin; only do that if your outermost proxy replaces the header instead of appending to it.
+     * Only the header family chosen with [headers] is read, because a proxy passes the other one through unchanged from
+     * the client. Pick the one your proxy sets: [ForwardedHeader.X_FORWARDED] (the default; nginx, HAProxy, Caddy,
+     * Traefik and most load balancers) or [ForwardedHeader.FORWARDED].
+     *
+     * The client IP is picked from the forwarding chain: the entries of `X-Forwarded-For`, else `X-Real-IP`, or the
+     * `for=` entries of `Forwarded`. With [ForwardedIp.RIGHTMOST] (the default) the chain is walked from the right,
+     * skipping [trustedProxies]; the first untrusted entry is the client (the leftmost entry if all are trusted).
+     * Proxies append to the chain, so entries left of your own proxies may be forged by the client, while the entry
+     * added by the proxy closest to the server cannot be. With [ForwardedIp.LEFTMOST] the first entry is used, like
+     * Javalin; only do that if your outermost proxy replaces the header instead of appending to it.
      *
      * Scheme and host come from the same hop: the `proto=` / `host=` of the selected `Forwarded` element, or the
      * `X-Forwarded-Proto` / `X-Forwarded-Host` value at the same position as the selected `X-Forwarded-For` entry. When
@@ -114,15 +118,17 @@ public class ContextResolverConfig {
      * @param mode which entry of the chain is the client.
      * @param trustedProxies IP addresses or CIDR ranges (IPv4 or IPv6, for example `10.0.0.0/8` or `fd00::/8`) of your
      *   own proxies. Host names are rejected; no DNS lookups are made.
+     * @param headers which headers your proxy sets.
      * @throws IllegalArgumentException if an entry of [trustedProxies] is not an IP address or CIDR range.
      */
     @JvmOverloads
     public fun useForwardedHeaders(
         mode: ForwardedIp = ForwardedIp.RIGHTMOST,
         trustedProxies: List<String> = emptyList(),
+        headers: ForwardedHeader = ForwardedHeader.X_FORWARDED,
     ): ContextResolverConfig = apply {
         val trusted = trustedProxies.map { IpRange.parse(it) }
-        val forwarded = ForwardedHeaders(mode, trusted)
+        val forwarded = ForwardedHeaders(mode, trusted, headers)
         ip = { ctx -> forwarded.clientIp(ctx) ?: ctx.remoteIp() }
         host = { ctx -> forwarded.host(ctx) ?: ctx.header(Header.HOST) }
         scheme = { ctx -> forwarded.proto(ctx) ?: "http" }
@@ -136,6 +142,15 @@ public enum class ForwardedIp {
 
     /** The leftmost entry, as Javalin does. Spoofable unless the outermost proxy overwrites the header. */
     LEFTMOST,
+}
+
+/** Which proxy headers [ContextResolverConfig.useForwardedHeaders] reads. */
+public enum class ForwardedHeader {
+    /** `X-Forwarded-For` (else `X-Real-IP`), `X-Forwarded-Proto` and `X-Forwarded-Host`. `Forwarded` is ignored. */
+    X_FORWARDED,
+
+    /** The RFC 7239 `Forwarded` header. `X-Forwarded-*` and `X-Real-IP` are ignored. */
+    FORWARDED,
 }
 
 /** An IP address or CIDR range, parsed without DNS lookups. */
@@ -187,7 +202,11 @@ internal class IpRange private constructor(private val network: ByteArray, priva
 }
 
 /** Parsing of proxy headers. */
-internal class ForwardedHeaders(private val mode: ForwardedIp, private val trusted: List<IpRange>) {
+internal class ForwardedHeaders(
+    private val mode: ForwardedIp,
+    private val trusted: List<IpRange>,
+    private val headers: ForwardedHeader,
+) {
     private class Hop(val forValue: String, val proto: String?, val host: String?)
 
     /** The index of the client entry in [chain], or -1 if the chain is empty. */
@@ -212,27 +231,29 @@ internal class ForwardedHeaders(private val mode: ForwardedIp, private val trust
         return hops.getOrNull(select(hops.map { it.forValue }))
     }
 
-    fun clientIp(ctx: Context): String? {
-        forwardedHop(ctx)?.let {
-            return it.forValue
-        }
-        val chain = forwardedFor(ctx)
-        return chain.getOrNull(select(chain))
+    /** The value of the per-hop header [name] for the selected `X-Forwarded-For` entry. */
+    private fun xForwarded(ctx: Context, name: String): String? {
+        val chain = headerValues(ctx, Header.X_FORWARDED_FOR).map { node(it) }
+        return pick(headerValues(ctx, name), chain.size, select(chain))
     }
 
+    fun clientIp(ctx: Context): String? =
+        when (headers) {
+            ForwardedHeader.FORWARDED -> forwardedHop(ctx)?.forValue
+            ForwardedHeader.X_FORWARDED -> xForwardedFor(ctx).let { it.getOrNull(select(it)) }
+        }
+
     fun proto(ctx: Context): String? =
-        forwardedHop(ctx)?.proto?.lowercase()
-            ?: headerValues(ctx, Header.X_FORWARDED_PROTO).let { values ->
-                val chain = headerValues(ctx, Header.X_FORWARDED_FOR)
-                pick(values, chain.size, select(chain))?.lowercase()
-            }
+        when (headers) {
+            ForwardedHeader.FORWARDED -> forwardedHop(ctx)?.proto
+            ForwardedHeader.X_FORWARDED -> xForwarded(ctx, Header.X_FORWARDED_PROTO)
+        }?.lowercase()
 
     fun host(ctx: Context): String? =
-        forwardedHop(ctx)?.host
-            ?: headerValues(ctx, Header.X_FORWARDED_HOST).let { values ->
-                val chain = headerValues(ctx, Header.X_FORWARDED_FOR)
-                pick(values, chain.size, select(chain))
-            }
+        when (headers) {
+            ForwardedHeader.FORWARDED -> forwardedHop(ctx)?.host
+            ForwardedHeader.X_FORWARDED -> xForwarded(ctx, Header.X_FORWARDED_HOST)
+        }
 
     companion object {
         /** All comma-separated values of all [name] header lines, trimmed, without empty ones. */
@@ -296,6 +317,11 @@ internal class ForwardedHeaders(private val mode: ForwardedIp, private val trust
         fun forwardedFor(ctx: Context): List<String> {
             val forwarded = forwardedHops(ctx)
             if (forwarded.isNotEmpty()) return forwarded.map { it.forValue }
+            return xForwardedFor(ctx)
+        }
+
+        /** The entries of `X-Forwarded-For`, else `X-Real-IP`. */
+        private fun xForwardedFor(ctx: Context): List<String> {
             val xff = headerValues(ctx, Header.X_FORWARDED_FOR).map { node(it) }.filter { it.isNotEmpty() }
             if (xff.isNotEmpty()) return xff
             return ctx.header(Header.X_REAL_IP)?.trim()?.ifEmpty { null }?.let { listOf(node(it)) } ?: emptyList()

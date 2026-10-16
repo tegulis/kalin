@@ -12,6 +12,7 @@ import java.util.Base64
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
+import net.tegulis.kalin.config.ForwardedHeader
 import net.tegulis.kalin.engine.Engine
 import net.tegulis.kalin.testtools.testKalin
 
@@ -70,6 +71,10 @@ class StaticServerTest :
             ServerOptions.parse(arrayOf("--help")).showHelp shouldBe true
             ServerOptions.parse(emptyArray()).host shouldBe "127.0.0.1"
             ServerOptions.parse(arrayOf("-b", "0.0.0.0")).host shouldBe "0.0.0.0"
+            ServerOptions.parse(emptyArray()).proxyHeaders shouldBe null
+            ServerOptions.parse(arrayOf("--proxy-headers")).proxyHeaders shouldBe ForwardedHeader.X_FORWARDED
+            ServerOptions.parse(arrayOf("--proxy-headers=forwarded")).proxyHeaders shouldBe ForwardedHeader.FORWARDED
+            shouldThrow<UsageException> { ServerOptions.parse(arrayOf("--proxy-headers=x-real-ip")) }
         }
 
         test("basic auth credentials from a flag, a file or the environment") {

@@ -7,6 +7,7 @@ import io.kotest.matchers.string.shouldStartWith
 import java.io.ByteArrayInputStream
 import java.util.Base64
 import java.util.zip.GZIPInputStream
+import net.tegulis.kalin.config.ForwardedHeader
 import net.tegulis.kalin.config.Key
 import net.tegulis.kalin.testtools.MultipartFile
 import net.tegulis.kalin.testtools.testKalin
@@ -124,6 +125,12 @@ class ContextTest :
                         header("X-Forwarded-Host", "public.example")
                     }
                     .bodyAsText() shouldBe "https|public.example|10.0.0.1"
+            }
+            testKalin {
+                app {
+                    contextResolver.useForwardedHeaders(headers = ForwardedHeader.FORWARDED)
+                    routes.get("/u") { ctx -> ctx.result("${ctx.scheme()}|${ctx.host()}|${ctx.ip()}") }
+                }
                 client
                     .get("/u") { header("Forwarded", "for=\"[2001:db8::1]:4711\";proto=https;host=f.example") }
                     .bodyAsText() shouldBe "https|f.example|2001:db8::1"
