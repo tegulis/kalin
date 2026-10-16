@@ -176,7 +176,11 @@ internal object Multipart {
         val parts = v.split('\'', limit = 3)
         if (parts.size != 3) return v
         val charset = runCatching { java.nio.charset.Charset.forName(parts[0]) }.getOrDefault(Charsets.UTF_8)
-        return java.net.URLDecoder.decode(parts[2].replace("+", "%2B"), charset)
+        return try {
+            java.net.URLDecoder.decode(parts[2].replace("+", "%2B"), charset)
+        } catch (_: IllegalArgumentException) {
+            throw BadRequestResponse("Malformed filename* parameter")
+        }
     }
 
     /** Bytes of file parts currently held in memory, shared by all parts of one request. */

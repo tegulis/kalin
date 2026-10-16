@@ -59,6 +59,23 @@ class MultipartTest :
             }
         }
 
+        test("malformed filename* is a bad request") {
+            testKalin {
+                app { routes.post("/upload") { ctx -> ctx.result("${ctx.uploadedFile("file")?.filename()}") } }
+                fun upload(filename: String) =
+                    client.post("/upload") {
+                        body(
+                            ("--b\r\nContent-Disposition: form-data; name=\"file\"; filename*=$filename\r\n\r\n" +
+                                    "x\r\n--b--\r\n")
+                                .toByteArray(),
+                            "multipart/form-data; boundary=b",
+                        )
+                    }
+                upload("UTF-8''%C3%A6.txt").bodyAsText() shouldBe "æ.txt"
+                upload("UTF-8''%ZZ.txt").code shouldBe 400
+            }
+        }
+
         test("maxTotalRequestSize falls back to http.maxRequestSize") {
             testKalin {
                 app {
