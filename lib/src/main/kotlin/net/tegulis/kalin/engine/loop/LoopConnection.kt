@@ -425,12 +425,17 @@ internal class LoopConnection(
     /** Writes pending output from the calling (handler) thread. Returns true if everything was written. */
     private fun directFlush(): Boolean {
         if (closed) return true
-        return try {
-            out.flushTo(socket) { timeout.after(runtime.writeTimeoutMs) }
-        } catch (_: IOException) {
-            loop.execute { closeNow() }
-            true
-        }
+        val done =
+            try {
+                out.flushTo(socket) {}
+            } catch (_: IOException) {
+                loop.execute { closeNow() }
+                return true
+            }
+        // A blocked write gets a deadline (the loop finishes it); a completed one leaves no deadline behind, so an
+        // idle stream (SSE) is not closed by a stale write timeout.
+        if (!done) timeout.after(runtime.writeTimeoutMs) else if (pipe == null) timeout.clear()
+        return done
     }
 
     private fun onExchangeComplete(exchange: Http1Exchange) {
@@ -642,18 +647,21 @@ internal class LoopConnection(
 
     override fun watchDisconnect(exchange: Http1Exchange) {
         // The loop keeps reading; EOF while watching closes the connection and notifies the exchange.
-        if (loop.inLoop) {
-            if (inputEof) {
-                exchange.disconnected()
-                closeNow()
-            }
-        } else {
-            loop.execute {
-                if (inputEof && !closed) {
-                    exchange.disconnected()
-                    closeNow()
-                }
-            }
+        if (loop.inLoop) watchOnLoop(exchange) else loop.execute { watchOnLoop(exchange) }
+    }
+
+    private fun watchOnLoop(exchange: Http1Exchange) {
+        if (closed) return
+        if (inputEof) {
+            exchange.disconnected()
+            closeNow()
+            return
+        }
+        // A streaming connection takes no further requests: keep only a tiny input buffer to notice EOF
+        if (inPos == inLimit && inBuf.size > 256) {
+            inBuf = ByteArray(256)
+            inPos = 0
+            inLimit = 0
         }
     }
 

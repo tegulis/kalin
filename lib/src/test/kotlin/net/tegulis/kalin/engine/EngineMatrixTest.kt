@@ -6,6 +6,7 @@ import java.io.InputStream
 import java.net.Socket
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import net.tegulis.kalin.Kalin
 import net.tegulis.kalin.http.nonBlocking
@@ -204,6 +205,39 @@ class LingeringCloseTest :
                     val body = "x".repeat(200_000)
                     val r = client.raw("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip\r\n\r\n$body")
                     r.response.code shouldBe 501
+                }
+            }
+        }
+    })
+
+class IdleStreamTest :
+    FunSpec({
+        val combos =
+            listOf(
+                    Engine.LOOM to Transport.NIO,
+                    Engine.EVENT_LOOP to Transport.NIO,
+                    Engine.EVENT_LOOP to Transport.EPOLL,
+                )
+                .filter { it.second != Transport.EPOLL || net.tegulis.kalin.engine.epoll.Epoll.available() }
+        for ((engine, transport) in combos) {
+            test("$engine/$transport: idle SSE streams outlive the write and request timeouts") {
+                val clients = java.util.concurrent.ConcurrentLinkedQueue<net.tegulis.kalin.sse.SseClient>()
+                testKalin(mode = TestMode.REAL, engine = engine, transport = transport) {
+                    app {
+                        server.writeTimeout = 200.milliseconds
+                        server.requestTimeout = 200.milliseconds
+                        routes.sse("/sse") { client ->
+                            client.keepAlive()
+                            clients.add(client)
+                            client.sendEvent("first", "1")
+                        }
+                    }
+                    client.sse("/sse") {
+                        take(1).single().data shouldBe "1"
+                        Thread.sleep(1500)
+                        clients.forEach { it.sendEvent("second", "2") }
+                        take(1).single().data shouldBe "2"
+                    }
                 }
             }
         }

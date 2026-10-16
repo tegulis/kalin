@@ -55,7 +55,8 @@ internal class OutputQueue(private val chunkSize: Int) {
                 }
             }
             if (left > 0) {
-                val buf = ByteArray(maxOf(chunkSize, left))
+                // Start small (most responses and SSE events are small); grow to chunkSize for larger outputs
+                val buf = ByteArray(maxOf(if (segs.isEmpty()) MIN_CHUNK else chunkSize, left))
                 System.arraycopy(b, o, buf, 0, left)
                 segs.addLast(Bytes(buf, 0, left))
             }
@@ -116,7 +117,7 @@ internal class OutputQueue(private val chunkSize: Int) {
                                 seg.len -= n
                                 return false
                             }
-                            if (segs.size == 1 && seg.appendable && seg.buf.size == chunkSize) {
+                            if (segs.size == 1 && seg.appendable && seg.buf.size <= RETAIN_LIMIT) {
                                 // keep the buffer for the next response
                                 seg.off = 0
                                 seg.len = 0
@@ -172,3 +173,8 @@ internal class OutputQueue(private val chunkSize: Int) {
         }
     }
 }
+
+private const val MIN_CHUNK = 1024
+
+/** Buffers up to this size are kept for the next response; larger ones are released (idle connections stay small). */
+private const val RETAIN_LIMIT = 4096
