@@ -162,3 +162,44 @@ subprojects {
         }
     }
 }
+
+/** Allowed runtime dependencies per published module, from dependency-allowlist.txt. */
+val dependencyAllowList: Map<String, List<String>> =
+    file("dependency-allowlist.txt").readLines().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.groupBy(
+        { it.substringBefore(':').trim() },
+        { it.substringAfter(':').trim() },
+    )
+
+subprojects {
+    if (name !in publishedModules) return@subprojects
+    val rules = dependencyAllowList[name].orEmpty()
+    val checkDependencies =
+        tasks.register("checkDependencies") {
+            group = "verification"
+            description = "Verifies the runtime dependencies against dependency-allowlist.txt (README section 5.4)"
+            val root = configurations.named("runtimeClasspath").flatMap { it.incoming.resolutionResult.rootComponent }
+            val moduleName = project.name
+            doLast {
+                val violations = ArrayList<String>()
+                val seen = HashSet<String>()
+                fun visit(component: org.gradle.api.artifacts.result.ResolvedComponentResult) {
+                    for (dep in component.dependencies) {
+                        if (dep !is org.gradle.api.artifacts.result.ResolvedDependencyResult) continue
+                        val selected = dep.selected
+                        val id = selected.moduleVersion ?: continue
+                        val key = "${id.group}:${id.name}"
+                        if (!seen.add(key)) continue
+                        val internal = selected.id is org.gradle.api.artifacts.component.ProjectComponentIdentifier
+                        val ok = internal || rules.any { r -> r == key || (r.endsWith(":*") && r.removeSuffix(":*") == id.group) }
+                        if (!ok) violations.add(key)
+                        visit(selected)
+                    }
+                }
+                visit(root.get())
+                if (violations.isNotEmpty()) {
+                    throw GradleException("Unapproved runtime dependencies of $moduleName: ${violations.joinToString()}")
+                }
+            }
+        }
+    tasks.matching { it.name == "check" }.configureEach { dependsOn(checkDependencies) }
+}

@@ -1,0 +1,21 @@
+# Runtime dependencies allowed per published module (README section 5.4).
+# Format: <module>: <group>:<artifact>   ("*" artifact allows the whole group)
+# kalin-core must depend on the Kotlin standard library only.
+lib: org.jetbrains.kotlin:kotlin-stdlib
+lib: org.jetbrains:annotations
+json: org.jetbrains.kotlin:kotlin-stdlib
+json: org.jetbrains:annotations
+json: org.jetbrains.kotlinx:kotlinx-serialization-json
+json: org.jetbrains.kotlinx:kotlinx-serialization-json-jvm
+json: org.jetbrains.kotlinx:kotlinx-serialization-core
+json: org.jetbrains.kotlinx:kotlinx-serialization-core-jvm
+json: org.jetbrains.kotlinx:kotlinx-serialization-bom
+testtools: org.jetbrains.kotlin:kotlin-stdlib
+testtools: org.jetbrains:annotations
+rendering-jte: org.jetbrains.kotlin:kotlin-stdlib
+rendering-jte: org.jetbrains:annotations
+rendering-jte: gg.jte:*
+inject: org.jetbrains.kotlin:kotlin-stdlib
+inject: org.jetbrains:annotations
+inject: me.tatarka.inject:kotlin-inject-runtime
+inject: me.tatarka.inject:kotlin-inject-runtime-jvm

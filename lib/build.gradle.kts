@@ -18,8 +18,8 @@ kotest { enablePowerAssert = true }
 
 val generatedSourcesDir = layout.buildDirectory.dir("generated/kotlin")
 
-val generateKotlin by
-    tasks.registering(Copy::class) {
+val generateKotlin =
+    tasks.register<Copy>("generateKotlin") {
         description = "Generates Kotlin sources from templates"
         val templateContext = mapOf("version" to project.version)
         inputs.properties(templateContext)
