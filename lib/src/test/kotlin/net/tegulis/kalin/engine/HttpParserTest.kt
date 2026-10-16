@@ -71,7 +71,12 @@ class HttpParserTest :
             head.host shouldBe "example.org:8080"
         }
 
-        test("asterisk-form for OPTIONS") { parse("OPTIONS * HTTP/1.1\r\nHost: a\r\n\r\n").path shouldBe "*" }
+        test("asterisk-form only for OPTIONS") {
+            parse("OPTIONS * HTTP/1.1\r\nHost: a\r\n\r\n").path shouldBe "*"
+            status("GET * HTTP/1.1\r\nHost: a\r\n\r\n") shouldBe 400
+            status("POST * HTTP/1.1\r\nHost: a\r\nContent-Length: 0\r\n\r\n") shouldBe 400
+            status("OPTIONS *?x HTTP/1.1\r\nHost: a\r\n\r\n") shouldBe 400
+        }
 
         test("custom methods") { parse("PROPFIND /dav HTTP/1.1\r\nHost: a\r\n\r\n").method shouldBe "PROPFIND" }
 
@@ -122,6 +127,9 @@ class HttpParserTest :
             status("GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n") shouldBe 400
             status("GET / HTTP/1.1\r\nHost: a/b\r\n\r\n") shouldBe 400
             parse("GET / HTTP/1.0\r\n\r\n").host shouldBe null
+            status("GET http://example.org/ HTTP/1.1\r\n\r\n") shouldBe 400
+            status("GET http://example.org/ HTTP/1.1\r\nHost: a\r\nHost: a\r\n\r\n") shouldBe 400
+            parse("GET http://example.org/ HTTP/1.0\r\n\r\n").host shouldBe "example.org"
         }
 
         test("unsupported expectations get 417") {

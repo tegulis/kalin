@@ -165,9 +165,10 @@ internal class HttpParser(private val limits: Limits) {
             pos = lineEnd + 1
         }
         if (hostCount > 1) throw HttpParseException(400, "Multiple Host headers")
+        // RFC 9112 3.2: an HTTP/1.1 request must carry exactly one Host header, even with an absolute-form target
+        if (head.http11 && hostCount == 0) throw HttpParseException(400, "Missing Host header")
         // RFC 9112 3.2.2: with an absolute-form target, the target's authority replaces the Host header
         absoluteHost?.let { head.host = it }
-        if (head.http11 && hostCount == 0 && head.host == null) throw HttpParseException(400, "Missing Host header")
         if (head.host != null && !validHost(head.host!!)) throw HttpParseException(400, "Invalid Host header")
         if (transferEncoding != null) {
             if (head.contentLength >= 0) throw HttpParseException(400, "Both Content-Length and Transfer-Encoding")
@@ -239,7 +240,7 @@ internal class HttpParser(private val limits: Limits) {
         if (path.isEmpty()) throw HttpParseException(400, "Invalid request target")
         if (path[0] != '/') {
             when {
-                path == "*" -> {}
+                path == "*" && head.method === "OPTIONS" && queryAt < 0 -> {}
                 path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true) -> {
                     val authStart = path.indexOf("//") + 2
                     val slash = path.indexOf('/', authStart)
