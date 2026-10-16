@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.milliseconds
 import net.tegulis.kalin.config.ServerConfig
+import net.tegulis.kalin.engine.loop.LoopSocket
+import net.tegulis.kalin.engine.loop.OutputQueue
 import net.tegulis.kalin.http.nonBlocking
 import net.tegulis.kalin.testtools.TestMode
 import net.tegulis.kalin.testtools.testKalin
@@ -169,7 +171,51 @@ class EventLoopFixesTest :
                 }
             }
         }
+
+        test("a producer waiting for a slow but progressing socket does not time out") {
+            val queue = OutputQueue(64 * 1024)
+            val chunk = ByteArray(300 * 1024)
+            queue.append(chunk, 0, chunk.size)
+            // 8 KB every 20 ms: about a second from the high to the low watermark, while the timeout is 300 ms
+            val socket = TrickleSocket(8 * 1024)
+            val drainer =
+                Thread.ofPlatform().start {
+                    while (!queue.isEmpty) {
+                        queue.flushTo(socket) {}
+                        Thread.sleep(20)
+                    }
+                }
+            queue.awaitBelow(256L * 1024, 64L * 1024, 300)
+            (queue.pending <= 64L * 1024) shouldBe true
+            drainer.join(5000)
+        }
     })
+
+/** A socket that accepts at most [perWrite] bytes per write. */
+private class TrickleSocket(private val perWrite: Int) : LoopSocket {
+    override fun read(b: ByteArray, off: Int, len: Int): Int = 0
+
+    override fun write(b: ByteArray, off: Int, len: Int): Int = minOf(len, perWrite)
+
+    override fun openFile(path: Path): AutoCloseable = throw UnsupportedOperationException()
+
+    override fun sendFile(file: AutoCloseable, position: Long, count: Long): Long = 0
+
+    override fun fileSize(file: AutoCloseable): Long = 0
+
+    override fun setReadInterest(on: Boolean) {}
+
+    override fun setWriteInterest(on: Boolean) {}
+
+    override val edgeTriggered: Boolean = false
+
+    override fun shutdownOutput() {}
+
+    override fun close() {}
+
+    override val remoteAddress: InetSocketAddress? = null
+    override val localAddress: InetSocketAddress? = null
+}
 
 /** A bare event loop engine (one loop) under test. */
 private class EngineUnderTest(val port: Int, private val engine: EventLoopEngine) {

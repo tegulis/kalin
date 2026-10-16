@@ -91,12 +91,21 @@ internal class OutputQueue(private val chunkSize: Int) {
         }
     }
 
-    /** Blocks the calling (non-loop) thread while more than [high] bytes are pending. */
+    /**
+     * Blocks the calling (non-loop) thread while more than [high] bytes are pending, until at most [low] are. Fails if
+     * nothing is written for [timeoutMs]; a slow but progressing client is fine.
+     */
     fun awaitBelow(high: Long, low: Long, timeoutMs: Long) {
         if (pending <= high) return
         lock.withLock {
-            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            val timeout = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            var deadline = System.nanoTime() + timeout
+            var last = pending
             while (pending > low && !closed) {
+                if (pending < last) {
+                    last = pending
+                    deadline = System.nanoTime() + timeout
+                }
                 val left = deadline - System.nanoTime()
                 if (left <= 0) throw IOException("Write timed out")
                 drained.awaitNanos(left)
