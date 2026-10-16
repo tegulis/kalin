@@ -187,3 +187,24 @@ class DeepPipelineTest :
             }
         }
     })
+
+class LingeringCloseTest :
+    FunSpec({
+        val combos =
+            listOf(
+                    Engine.LOOM to Transport.NIO,
+                    Engine.EVENT_LOOP to Transport.NIO,
+                    Engine.EVENT_LOOP to Transport.EPOLL,
+                )
+                .filter { it.second != Transport.EPOLL || net.tegulis.kalin.engine.epoll.Epoll.available() }
+        for ((engine, transport) in combos) {
+            test("$engine/$transport: an early error response survives unread request data") {
+                testKalin(mode = TestMode.REAL, engine = engine, transport = transport) {
+                    app { routes.post("/") { it.result("ok") } }
+                    val body = "x".repeat(200_000)
+                    val r = client.raw("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip\r\n\r\n$body")
+                    r.response.code shouldBe 501
+                }
+            }
+        }
+    })

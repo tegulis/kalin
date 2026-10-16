@@ -159,6 +159,7 @@ internal class LoopConnection(
     private fun onInputEof() {
         val ex = current
         when {
+            state == LINGER -> closeNow()
             ex == null && inPos == inLimit -> closeNow()
             ex == null -> closeNow() // partial head
             ex.watching -> {
@@ -191,6 +192,13 @@ internal class LoopConnection(
                     return
                 }
                 DRAIN_BODY -> if (!drainBody()) return
+                LINGER -> {
+                    lingered += inLimit - inPos
+                    inPos = 0
+                    inLimit = 0
+                    if (lingered > LINGER_LIMIT) closeNow()
+                    return
+                }
                 else -> return
             }
         }
@@ -517,11 +525,26 @@ internal class LoopConnection(
         }
     }
 
+    private var lingered = 0L
+
+    /**
+     * Half-closes and discards input for a short while before closing, so the client receives the response instead of a
+     * connection reset caused by unread request data.
+     */
     private fun lingerAndClose() {
         try {
             socket.shutdownOutput()
         } catch (_: IOException) {}
-        closeNow()
+        if (inputEof || state == LINGER) {
+            closeNow()
+            return
+        }
+        state = LINGER
+        readPaused = false
+        socket.setReadInterest(true)
+        timeout.after(LINGER_MILLIS)
+        inPos = inLimit
+        readLoop()
     }
 
     private fun protocolError(status: Int, message: String) {
@@ -776,6 +799,9 @@ internal class LoopConnection(
         const val READ_INLINE_BODY = 1
         const val HANDLING = 2
         const val DRAIN_BODY = 3
+        const val LINGER = 4
+        const val LINGER_MILLIS = 1000L
+        const val LINGER_LIMIT = 256L * 1024
         const val HIGH_WATERMARK = 256L * 1024
         const val LOW_WATERMARK = 64L * 1024
         const val PIPE_CAPACITY = 256 * 1024
