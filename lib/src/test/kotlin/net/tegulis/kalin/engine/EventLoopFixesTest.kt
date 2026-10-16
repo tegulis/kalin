@@ -152,6 +152,21 @@ class EventLoopFixesTest :
                         client.post("/m").bodyAsText() shouldBe "post"
                     }
                 }
+
+                test("a response is not held back by the partial head of a pipelined request") {
+                    withEngine(transport, { ex -> ex.send(ex.requestBody().readAllBytes()) }) {
+                        Socket("127.0.0.1", port).use { s ->
+                            s.soTimeout = 3000
+                            s.getOutputStream()
+                                .write(
+                                    "POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 4\r\n\r\npingGET / HTTP/1.1\r\nHo"
+                                        .toByteArray()
+                                )
+                            // The client may wait for this response before sending the rest
+                            readResponseBody(s.getInputStream().buffered()) shouldBe "ping"
+                        }
+                    }
+                }
             }
         }
     })

@@ -483,15 +483,17 @@ internal class LoopConnection(
             state = DRAIN_BODY
             if (!dispatching) {
                 process()
-                flushIfIdle()
+                flushOutput()
             }
             return
         }
         nextRequest()
-        // Inside an inline dispatch the enclosing process() loop handles further pipelined requests (no recursion)
+        // Inside an inline dispatch the enclosing process() loop handles further pipelined requests (no recursion) and
+        // their responses are flushed together. Here process() has consumed every complete request, so anything left is
+        // a partial head the client may only complete after seeing this response: flush now.
         if (!dispatching) {
             process()
-            flushIfIdle()
+            flushOutput()
         }
     }
 
@@ -506,12 +508,6 @@ internal class LoopConnection(
             socket.setReadInterest(true)
             if (socket.edgeTriggered) loop.execute { onReadable() }
         }
-    }
-
-    /** Flushes unless more pipelined requests are buffered (their responses are batched). */
-    private fun flushIfIdle() {
-        if (closed) return
-        if (state != READ_HEAD || inPos == inLimit) flushOutput()
     }
 
     // ---- output ------------------------------------------------------------------------------------------
