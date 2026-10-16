@@ -179,7 +179,7 @@ internal constructor(
     }
 
     @Suppress("UNCHECKED_CAST")
-    internal fun addCheck(fieldName: String, check: Check<T>, error: ValidationError<*>) {
+    internal fun addCheck(fieldName: String, check: Check<T>, error: ValidationError<Any?>) {
         check(computed == null) { "Cannot add checks after the value was validated" }
         rules.add(Rule(fieldName, check as Check<Any?>, error))
     }
@@ -198,7 +198,7 @@ internal constructor(
     }
 
     /** Adds a check with a [ValidationError]. */
-    public open fun check(check: Check<T>, error: ValidationError<*>): Validator<T> = apply {
+    public open fun check(check: Check<T>, error: ValidationError<Any?>): Validator<T> = apply {
         addCheck(fieldName, check, error)
     }
 
@@ -252,7 +252,7 @@ public class NullableValidator<T> internal constructor(private val delegate: Val
     public fun check(check: Check<T>, error: String): NullableValidator<T> = apply { delegate.check(check, error) }
 
     /** Adds a check; it only runs when a value is present. */
-    public fun check(check: Check<T>, error: ValidationError<*>): NullableValidator<T> = apply {
+    public fun check(check: Check<T>, error: ValidationError<Any?>): NullableValidator<T> = apply {
         delegate.check(check, error)
     }
 
@@ -275,7 +275,7 @@ public class BodyValidator<T>(body: String, valueSupplier: () -> Any?) :
         addCheck(REQUEST_BODY, check, ValidationError<T>(error))
     }
 
-    override fun check(check: Check<T>, error: ValidationError<*>): BodyValidator<T> = apply {
+    override fun check(check: Check<T>, error: ValidationError<Any?>): BodyValidator<T> = apply {
         addCheck(REQUEST_BODY, check, error)
     }
 
@@ -285,7 +285,7 @@ public class BodyValidator<T>(body: String, valueSupplier: () -> Any?) :
     }
 
     /** Adds a check reported under [fieldName]. */
-    public fun check(fieldName: String, check: Check<T>, error: ValidationError<*>): BodyValidator<T> = apply {
+    public fun check(fieldName: String, check: Check<T>, error: ValidationError<Any?>): BodyValidator<T> = apply {
         addCheck(fieldName, check, error)
     }
 

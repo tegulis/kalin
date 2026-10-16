@@ -69,6 +69,24 @@ subprojects {
                 showStackTraces = true
             }
             reports.all { required = false }
+            addTestListener(
+                object : TestListener {
+                    override fun beforeSuite(suite: TestDescriptor) {}
+
+                    override fun beforeTest(testDescriptor: TestDescriptor) {}
+
+                    override fun afterTest(testDescriptor: TestDescriptor, result: TestResult) {}
+
+                    override fun afterSuite(suite: TestDescriptor, result: TestResult) {
+                        if (suite.parent == null) {
+                            println(
+                                "${project.name}: ${result.testCount} tests, ${result.successfulTestCount} passed, " +
+                                    "${result.failedTestCount} failed, ${result.skippedTestCount} skipped"
+                            )
+                        }
+                    }
+                }
+            )
             // Engine/transport matrix: -Pkalin.engine=EVENT_LOOP -Pkalin.transport=EPOLL
             listOf("kalin.engine", "kalin.transport", "kalin.testMode").forEach { key ->
                 project.findProperty(key)?.let { systemProperty(key, it.toString()) }

@@ -484,7 +484,7 @@ internal class KalinContext(private val exchange: Http1Exchange, internal val st
     private fun handleFuture(supplier: Supplier<out CompletableFuture<*>>) {
         val future = runTask { supplier.get() } ?: return runTasks()
         val timeout = state.asyncTimeout
-        val timed = if (timeout > 0) future.orTimeout(timeout, TimeUnit.MILLISECONDS) else future
+        val timed = if (timeout > 0) future.copy().orTimeout(timeout, TimeUnit.MILLISECONDS) else future
         timed.whenComplete { _, error ->
             val resume = Runnable {
                 if (error != null) {
