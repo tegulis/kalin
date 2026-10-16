@@ -111,12 +111,16 @@ public class KotlinxJsonMapper(
     override fun toJsonStream(obj: Any?, type: KType): InputStream {
         if (obj == null) return "null".byteInputStream()
         val serializer = if (isDynamic(type)) null else serializerFor(type)
-        val pipe = java.io.PipedInputStream(64 * 1024)
-        val out = java.io.PipedOutputStream(pipe)
+        // Encoding errors are rethrown to the reader so the response aborts instead of ending early; closing the
+        // returned stream makes the encoder's writes fail, which ends the encoding thread
+        val pipe = JsonPipe(64 * 1024)
         Thread.ofVirtual().start {
-            out.use {
-                if (serializer != null) json.encodeToStream(serializer, obj, it)
-                else json.encodeToStream(JsonElement.serializer(), toElement(obj), it)
+            try {
+                if (serializer != null) json.encodeToStream(serializer, obj, pipe.sink)
+                else json.encodeToStream(JsonElement.serializer(), toElement(obj), pipe.sink)
+                pipe.complete()
+            } catch (e: Throwable) {
+                pipe.fail(e)
             }
         }
         return pipe

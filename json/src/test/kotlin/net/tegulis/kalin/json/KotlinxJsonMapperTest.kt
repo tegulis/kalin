@@ -1,13 +1,25 @@
 package net.tegulis.kalin.json
 
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.stream.Stream
 import kotlin.reflect.typeOf
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
 import net.tegulis.kalin.http.NotFoundResponse
 import net.tegulis.kalin.testtools.testKalin
@@ -17,6 +29,36 @@ import net.tegulis.kalin.testtools.testKalin
 @Serializable data class Wrapper(val users: List<User>, val meta: Map<String, String>)
 
 @Serializable data class Text(val value: String)
+
+@Serializable(with = ExplodingSerializer::class) class Exploding
+
+object ExplodingSerializer : KSerializer<Exploding> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Exploding", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: Exploding): Unit = throw IllegalStateException("boom")
+
+    override fun deserialize(decoder: Decoder): Exploding = Exploding()
+}
+
+@Serializable data class WithExploding(val before: String, val bad: Exploding)
+
+/** Encodes a large list of strings and counts [done] down when the encoding ends, successfully or not. */
+@Serializable(with = BigSerializer::class) class Big(val done: CountDownLatch)
+
+object BigSerializer : KSerializer<Big> {
+    private val delegate = ListSerializer(String.serializer())
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun serialize(encoder: Encoder, value: Big) {
+        try {
+            delegate.serialize(encoder, List(10_000) { "x".repeat(100) })
+        } finally {
+            value.done.countDown()
+        }
+    }
+
+    override fun deserialize(decoder: Decoder): Big = Big(CountDownLatch(0))
+}
 
 class KotlinxJsonMapperTest :
     FunSpec({
@@ -54,6 +96,27 @@ class KotlinxJsonMapperTest :
                     typeOf<Map<String, Any>>(),
                 )
             ) shouldBe """{"min":-9223372036854775808,"max":9223372036854775807,"d":1.5}"""
+        }
+
+        test("toJsonStream rethrows encoding errors to the reader") {
+            val stream = mapper.toJsonStream(WithExploding("x".repeat(100_000), Exploding()), typeOf<WithExploding>())
+            val e = shouldThrow<IOException> { stream.use { it.readAllBytes() } }
+            e.cause!!.message shouldBe "boom"
+        }
+
+        test("toJsonStream: closing an unread stream ends the encoding thread") {
+            val done = CountDownLatch(1)
+            val stream = mapper.toJsonStream(Big(done), typeOf<Big>())
+            stream.read() shouldBe '['.code
+            done.await(200, TimeUnit.MILLISECONDS) shouldBe false
+            stream.close()
+            done.await(5, TimeUnit.SECONDS) shouldBe true
+        }
+
+        test("toJsonStream streams large values completely") {
+            val done = CountDownLatch(1)
+            val text = mapper.toJsonStream(Big(done), typeOf<Big>()).use { it.readAllBytes().decodeToString() }
+            text shouldBe KotlinxJsonMapper.DEFAULT_JSON.encodeToString(List(10_000) { "x".repeat(100) })
         }
 
         test("dynamic values: maps, lists, nested serializable values") {
