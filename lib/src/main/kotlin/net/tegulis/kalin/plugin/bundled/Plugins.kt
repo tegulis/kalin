@@ -251,7 +251,11 @@ public class DevLoggingPlugin(userConfig: Consumer<Config>? = null) :
     }
 }
 
-/** Redirects requests with uppercase characters to the lowercase path if only that one is routed. */
+/**
+ * Redirects requests with uppercase characters to the lowercase path if only that one is routed. Paths that would
+ * redirect to a target starting with `//` or containing `\` are not redirected, since browsers treat those as
+ * references to another host.
+ */
 public class RedirectToLowercasePathPlugin : Plugin<Unit>() {
     override fun onInitialize(config: KalinConfig) {
         check(!config.router.caseInsensitiveRoutes) {
@@ -274,10 +278,10 @@ public class RedirectToLowercasePathPlugin : Plugin<Unit>() {
                     seg.lowercase(Locale.ROOT)
                 else seg
             }
-            ctx.redirect(
-                k.contextPath().trimEnd('/') + fixed.joinToString("/") + (ctx.queryString()?.let { "?$it" } ?: ""),
-                HttpStatus.MOVED_PERMANENTLY,
-            )
+            val path = k.contextPath().trimEnd('/') + fixed.joinToString("/")
+            // Browsers read "//host" and "/\host" as another origin: never redirect there
+            if (path.startsWith("//") || path.contains('\\')) return@before
+            ctx.redirect(path + (ctx.queryString()?.let { "?$it" } ?: ""), HttpStatus.MOVED_PERMANENTLY)
         }
     }
 
