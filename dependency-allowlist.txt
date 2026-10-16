@@ -19,3 +19,10 @@ inject: org.jetbrains.kotlin:kotlin-stdlib
 inject: org.jetbrains:annotations
 inject: me.tatarka.inject:kotlin-inject-runtime
 inject: me.tatarka.inject:kotlin-inject-runtime-jvm
+bundle: org.jetbrains.kotlin:kotlin-stdlib
+bundle: org.jetbrains:annotations
+bundle: org.jetbrains.kotlinx:kotlinx-serialization-json
+bundle: org.jetbrains.kotlinx:kotlinx-serialization-json-jvm
+bundle: org.jetbrains.kotlinx:kotlinx-serialization-core
+bundle: org.jetbrains.kotlinx:kotlinx-serialization-core-jvm
+bundle: org.jetbrains.kotlinx:kotlinx-serialization-bom

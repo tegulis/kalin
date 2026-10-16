@@ -23,7 +23,8 @@ class StressTest :
                 Triple(Engine.EVENT_LOOP, Transport.EPOLL, HandlerExecution.VIRTUAL_THREAD),
                 Triple(Engine.EVENT_LOOP, Transport.EPOLL, HandlerExecution.EVENT_LOOP),
             )
-        for ((engine, transport, execution) in combos) {
+        for ((engine, transport, execution) in
+            combos.filter { it.second != Transport.EPOLL || net.tegulis.kalin.engine.epoll.Epoll.available() }) {
             test("$engine/$transport/$execution: concurrent pipelined keep-alive clients") {
                 val app = Kalin.create { config ->
                     config.startup.showBanner = false

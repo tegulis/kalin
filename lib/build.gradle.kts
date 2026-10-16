@@ -30,7 +30,9 @@ val generateKotlin =
 
 tasks.named("compileKotlin").configure { dependsOn(generateKotlin) }
 
-tasks.matching { it.name == "sourcesJar" || it.name.startsWith("ktfmt") }.configureEach { dependsOn(generateKotlin) }
+tasks
+    .matching { it.name.endsWith("ourcesJar") || it.name.startsWith("ktfmt") }
+    .configureEach { dependsOn(generateKotlin) }
 
 sourceSets.main { kotlin.srcDir(generatedSourcesDir) }
 

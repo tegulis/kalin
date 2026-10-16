@@ -1,0 +1,8 @@
+Kalin
+Copyright 2026 Tegulis
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Kalin's public API is modeled on Javalin (https://javalin.io), Copyright 2017 David Åse,
+licensed under the Apache License, Version 2.0. Several of Kalin's tests follow the
+behavior specified by Javalin's test suite.

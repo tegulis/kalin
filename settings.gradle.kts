@@ -12,7 +12,7 @@ plugins {
 rootProject.name = "kalin"
 
 // Shipped library modules
-include("lib", "json", "testtools", "rendering-jte", "inject")
+include("lib", "json", "testtools", "rendering-jte", "inject", "bundle")
 
 // Standalone static file server
 include("app")

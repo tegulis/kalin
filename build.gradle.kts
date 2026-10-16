@@ -31,6 +31,7 @@ val publishedModules =
         "testtools" to "kalin-testtools",
         "rendering-jte" to "kalin-rendering-jte",
         "inject" to "kalin-inject",
+        "bundle" to "kalin-bundle",
     )
 
 subprojects {
@@ -113,10 +114,8 @@ subprojects {
     publishedModules[name]?.let { artifact ->
         apply(plugin = "java-library")
         apply(plugin = "maven-publish")
-        extensions.configure<JavaPluginExtension> {
-            withSourcesJar()
-            withJavadocJar()
-        }
+        // Sources come from the Kotlin plugin's kotlinSourcesJar (added to the publication below)
+        extensions.configure<JavaPluginExtension> { withJavadocJar() }
         tasks.withType<Jar>().configureEach {
             archiveBaseName.set(artifact)
             manifest {
@@ -132,6 +131,7 @@ subprojects {
                 create<MavenPublication>("maven") {
                     artifactId = artifact
                     from(components["java"])
+                    afterEvaluate { artifact(tasks.named("kotlinSourcesJar")) { classifier = "sources" } }
                     pom {
                         name.set(artifact)
                         description.set(

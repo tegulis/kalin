@@ -29,7 +29,8 @@ class EngineMatrixTest :
                 Combo(Engine.EVENT_LOOP, Transport.EPOLL, HandlerExecution.EVENT_LOOP, "EVENT_LOOP/EPOLL"),
             )
 
-        for (c in combos) {
+        for (c in
+            combos.filter { it.transport != Transport.EPOLL || net.tegulis.kalin.engine.epoll.Epoll.available() }) {
             context("${c.expected} with ${c.execution} handlers") {
                 test("basic requests, pipelining, bodies, errors") {
                     testKalin(mode = TestMode.REAL, engine = c.engine, transport = c.transport) {
