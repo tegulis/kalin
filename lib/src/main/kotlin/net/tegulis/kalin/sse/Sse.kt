@@ -32,8 +32,8 @@ public class Emitter internal constructor(private val out: OutputStream) {
     public fun emit(event: String?, data: InputStream, id: String?) {
         synchronized(this) {
             buffer.reset()
-            id?.let { buffer.writeAscii("id: ${stripCrLf(it)}\n") }
-            event?.let { buffer.writeAscii("event: ${stripCrLf(it)}\n") }
+            id?.let { buffer.writeUtf8("id: ${stripCrLf(it)}\n") }
+            event?.let { buffer.writeUtf8("event: ${stripCrLf(it)}\n") }
             var any = false
             data.bufferedReader(Charsets.UTF_8).useLines { lines ->
                 for (line in lines) {

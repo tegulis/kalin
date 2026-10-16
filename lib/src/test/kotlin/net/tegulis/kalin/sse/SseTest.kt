@@ -58,6 +58,12 @@ class SseTest :
             out.toString(Charsets.UTF_8) shouldBe ": a\n: data: evil\n: b\n: c\n\n"
         }
 
+        test("event names and ids are UTF-8") {
+            val out = java.io.ByteArrayOutputStream()
+            Emitter(out).emit("ævent 中", "dåta".byteInputStream(), "id-😀\r\nevent: x")
+            out.toString(Charsets.UTF_8) shouldBe "id: id-😀event: x\nevent: ævent 中\ndata: dåta\n\n"
+        }
+
         test("keepAlive clients can be used from other threads and closed") {
             val clients = ConcurrentLinkedQueue<SseClient>()
             val closed = CountDownLatch(1)
