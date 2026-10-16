@@ -41,6 +41,25 @@ class ChunkedDecoderTest :
             }
         }
 
+        test("requires CRLF line endings and strict chunk size lines") {
+            val bad =
+                listOf(
+                    "5\nhello\r\n0\r\n\r\n",
+                    "5;ext=x\nhello\r\n0\r\n\r\n",
+                    "5\r\nhello\n0\r\n\r\n",
+                    "5\r\nhello\r\n0\n\r\n",
+                    "5\r\nhello\r\n0\r\nX: t\n\r\n",
+                    "5\r\nhello\r\n0\r\nX: t\r\n\n",
+                    "5\r\nhello\r\n0\r\nX: \rt\r\n\r\n",
+                    "5 junk\r\nhello\r\n0\r\n\r\n",
+                    "5x\r\nhello\r\n0\r\n\r\n",
+                )
+            for (b in bad) shouldThrow<HttpParseException> { decodeAll(b.toByteArray(), step = 1) }
+            for (ok in listOf("5 ;ext=x\r\n", "5;ext=x\r\n", "5\t;a;b=\"c\"\r\n", "5\r\n")) {
+                decodeAll((ok + "hello\r\n0\r\nX: t\r\n\r\n").toByteArray(), step = 1).first shouldBe "hello"
+            }
+        }
+
         test("round trip with random chunking") {
             val random = Random(7)
             repeat(200) {

@@ -39,26 +39,19 @@ internal class ChunkedDecoder(private val limits: Limits) {
                         i++
                     } else if (sizeDigits == 0) {
                         throw HttpParseException(400, "Invalid chunk size")
-                    } else if (c == ';'.code || c == ' '.code || c == '\t'.code) {
-                        state = EXT
-                        lineBytes = 0
-                        i++
-                    } else if (c == '\r'.code) {
-                        state = SIZE_LF
-                        i++
-                    } else if (c == '\n'.code) {
-                        i++
-                        endOfSizeLine()
                     } else {
-                        throw HttpParseException(400, "Invalid chunk size")
+                        afterSize(c)
+                        i++
                     }
+                }
+                SIZE_BWS -> {
+                    afterSize(src[i].toInt() and 0xFF)
+                    i++
                 }
                 EXT -> {
                     val c = src[i].toInt() and 0xFF
                     i++
-                    if (c == '\n'.code) {
-                        endOfSizeLine()
-                    } else if (c == '\r'.code) {
+                    if (c == '\r'.code) {
                         state = SIZE_LF
                     } else {
                         if (c < 0x20 && c != '\t'.code || c == 0x7F)
@@ -83,14 +76,9 @@ internal class ChunkedDecoder(private val limits: Limits) {
                     if (chunkRemaining == 0L) state = DATA_CR
                 }
                 DATA_CR -> {
-                    val b = src[i]
+                    if (src[i] != HttpParser.CR) throw HttpParseException(400, "Missing CRLF after chunk data")
                     i++
-                    state =
-                        when (b) {
-                            HttpParser.CR -> DATA_LF
-                            HttpParser.LF -> SIZE.also { resetSize() }
-                            else -> throw HttpParseException(400, "Missing CRLF after chunk data")
-                        }
+                    state = DATA_LF
                 }
                 DATA_LF -> {
                     if (src[i] != HttpParser.LF) throw HttpParseException(400, "Missing CRLF after chunk data")
@@ -101,25 +89,45 @@ internal class ChunkedDecoder(private val limits: Limits) {
                 TRAILER -> {
                     val b = src[i]
                     i++
-                    if (++trailerBytes > limits.maxTrailerSize)
-                        throw HttpParseException(431, "Trailer section too large")
-                    when (b) {
-                        HttpParser.LF -> {
-                            if (trailerLineEmpty) state = DONE
-                            trailerLineEmpty = true
-                        }
-                        HttpParser.CR -> {}
-                        else -> {
-                            val c = b.toInt() and 0xFF
-                            if (c < 0x20 && c != '\t'.code || c == 0x7F)
-                                throw HttpParseException(400, "Invalid trailer")
-                            trailerLineEmpty = false
-                        }
+                    countTrailerByte()
+                    if (b == HttpParser.CR) {
+                        state = TRAILER_LF
+                    } else {
+                        val c = b.toInt() and 0xFF
+                        if (c < 0x20 && c != '\t'.code || c == 0x7F) throw HttpParseException(400, "Invalid trailer")
+                        trailerLineEmpty = false
+                    }
+                }
+                TRAILER_LF -> {
+                    if (src[i] != HttpParser.LF) throw HttpParseException(400, "Invalid trailer line ending")
+                    i++
+                    countTrailerByte()
+                    if (trailerLineEmpty) {
+                        state = DONE
+                    } else {
+                        trailerLineEmpty = true
+                        state = TRAILER
                     }
                 }
             }
         }
         return i - off
+    }
+
+    /** Handles the byte after the chunk size digits: optional whitespace, then an extension or the line end. */
+    private fun afterSize(c: Int) {
+        state =
+            when (c) {
+                ' '.code,
+                '\t'.code -> SIZE_BWS
+                ';'.code -> EXT.also { lineBytes = 0 }
+                '\r'.code -> SIZE_LF
+                else -> throw HttpParseException(400, "Invalid chunk size")
+            }
+    }
+
+    private fun countTrailerByte() {
+        if (++trailerBytes > limits.maxTrailerSize) throw HttpParseException(431, "Trailer section too large")
     }
 
     private fun endOfSizeLine() {
@@ -152,6 +160,8 @@ internal class ChunkedDecoder(private val limits: Limits) {
         const val DATA_CR = 4
         const val DATA_LF = 5
         const val TRAILER = 6
-        const val DONE = 7
+        const val TRAILER_LF = 7
+        const val SIZE_BWS = 8
+        const val DONE = 9
     }
 }
